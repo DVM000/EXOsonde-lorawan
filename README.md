@@ -85,8 +85,8 @@ The LoRaWAN payload will be divided into multiple packets, each conforming to th
 [3-6] -> Date (4 bytes - 2 Modbus registers)
 [7-10] -> Time (4 bytes - 2 Modbus registers)
 -------------- PAYLOAD --------------
-[11-12] -> Sampling period (on first packet)
-[12-(N-1)] -> Valid parameters (6 bytes each: 1 code + 1 status + 4 values)
+[11-13] -> Sampling period (3 bytes: 1 code (0) + 2 value) (on first packet)
+[14-(N-1)] -> Valid parameters (6 bytes each: 1 code + 1 status + 4 values)
 -------------- CRC --------------
 [N]   -> CRC8 byte
 ```
