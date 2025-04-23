@@ -323,7 +323,7 @@ void loop() {
         Serial.print(". Payload: "); Serial.println(index);
         Serial.println("--- Sending packet... --- ");
         if (true) { printPayloadHex(payload, index);  }
-        //bool err = SendPacket(payload, index);
+        bool err = SendPacket(payload, index);
 
         Serial.println();
     } // end for packets

@@ -1,6 +1,7 @@
 # EXO Sonde to LoRaWAN Bridge
 
-This project reads data from an EXO sonde (YSI/Xylem) via Modbus RTU and transmits the data over LoRaWAN using an [**Arduino MKR WAN 1310**](https://store.arduino.cc/products/arduino-mkr-wan-1310) 
+This project reads data from an [EXO sonde (YSI/Xylem)](https://www.xylem.com/siteassets/brand/ysi/resources/manual/exo-user-manual-web.pdf) via 
+Modbus RTU and transmits the data over LoRaWAN using an [**Arduino MKR WAN 1310**](https://store.arduino.cc/products/arduino-mkr-wan-1310) 
 board + [antenna](https://store.arduino.cc/products/dipole-pentaband-waterproof-antenna).
 
 ---
@@ -9,10 +10,11 @@ board + [antenna](https://store.arduino.cc/products/dipole-pentaband-waterproof-
 
 The system periodically reads parameters from the EXO sonde, extracting valid sensor values. These values are packed into a structured LoRaWAN payload including:
 
+- Hardware/software version 
 - Device ID
 - Date and time of measurement
 - Sampling period
-- Valid parameter values (up to 32)
+- Valid parameter values (up to 30)
 - CRC byte for data integrity
 
 The payload is transmitted over a LoRaWAN network using OTAA.
@@ -23,7 +25,7 @@ The payload is transmitted over a LoRaWAN network using OTAA.
 
 - **EXO Sonde** connected to **Signal Output Adapter for EXO Sonde** 
 - **Arduino**: `VCC`, `GND`, `14-TX`, `13-RX` connected to Signal Adapter (hardware `Serial1` for communication with EXO sonde)
-- For monitoring/debugging: Laptop connected to the Arduino via USB using the default `Serial` interface 
+- For monitoring/debugging: **Laptop** connected to the Arduino via USB (hardware default `Serial` interface) 
 
 ---
 
@@ -59,7 +61,7 @@ Sample period: 120
 idx  Code   Status   Raw 16-bit register values
 0    51     0        (DATE) 4240 4857
 1    54     0        (TIME) 2180 4815
-3	230	    0	     49E9 413D
+3    230    0	     49E9 413D
 ...
 
 Number of valid parameters: 22 + sample_period
