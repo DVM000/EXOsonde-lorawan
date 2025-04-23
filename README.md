@@ -64,8 +64,8 @@ idx  Code   Status   Raw 16-bit register values
 3    230    0	     49E9 413D
 ...
 
-Number of valid parameters: 22 + sample_period
-Bytes required for parameters + sample_period: 134
+Number of valid parameters: 23
+Bytes required for parameters: 138
 
 Payload (HEX): 
 00 00 12 40 42 57 48 57 48 80 21 78 ... [sensor values] ... CRC

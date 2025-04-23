@@ -31,19 +31,25 @@ String appKey = SECRET_APP_KEY;
 const int JOIN_TIMEOUT = 60000; // max waiting time for joining
 
 // LoRaWAN packet variables
-const int MAX_PAYLOAD_SIZE = 51;               // LoRaWAN payload limit (51 for SF10, 222 for SF8, ...) // https://www.semtech.com/design-support/faq/faq-lorawan/P20
+const int MAX_PAYLOAD_SIZE = 18;               // LoRaWAN payload limit (51 for SF10, 222 for SF8, ...) // https://www.semtech.com/design-support/faq/faq-lorawan/P20
 const int METADATA_BYTES = 1 + 1 + 1 + 8 + 1;  // Reserved + version + deviceID + Date+Time (8B) + CRC
 const int PARAM_BYTES = 1 + 1 + 4;             // 1 byte of code + 1 byte of status + 2 uint16_t registers per parameter 
 const int MAX_paramsPerPacket = (MAX_PAYLOAD_SIZE - METADATA_BYTES) / PARAM_BYTES; // ( maximum payload - (header+CRC) ) / bytes_per_parameter
 
 
 // Functions
-bool JoinNetwork(int maxRetries = 3, int retryDelay = 5000){
+bool JoinNetwork(int maxRetries = 5, int retryDelay = 5000){
     bool connected = false;
     Serial.print("Module version is: ");
     Serial.print(modem.version());
     Serial.print(". device EUI is: ");
     Serial.println(modem.deviceEUI());
+
+    // https://www.semtech.com/design-support/faq/faq-lorawan/
+    modem.minPollInterval(60); // independent of this setting, the modem will not allow sending more than one message every 2 minutes
+    modem.setPort(10);         // Application-specific Fport
+    modem.dataRate(0);         // Data Rate. 0: SF10 BW 125 kHz
+    modem.setADR(true);        // (dinamically) Adaptive Data Rate
 
     Serial.print("--- Joining via OTAA... (timeout: "); Serial.print(JOIN_TIMEOUT/1000); Serial.println(" sec) --- ");
     for (int attempt = 1; attempt <= maxRetries; attempt++) {
@@ -63,18 +69,13 @@ bool JoinNetwork(int maxRetries = 3, int retryDelay = 5000){
     }
 
     Serial.println(" -> Join pass.");
-
-    // https://www.semtech.com/design-support/faq/faq-lorawan/
-    modem.minPollInterval(60); // independent of this setting, the modem will not allow sending more than one message every 2 minutes
-    modem.setPort(10);         // Application-specific Fport
-    modem.dataRate(0);         // Data Rate. 0: SF10 BW 125 kHz
-    modem.setADR(true);        // (dinamically) Adaptive Data Rate
     return true;
 }
 
-bool SendPacket(uint8_t* payload, int numBytes, int maxRetries = 3, int retryDelay = 5000) {
+bool SendPacket(uint8_t* payload, int numBytes, int maxRetries = 5, int retryDelay = 5000) {
     bool success = false;
     for (int attempt = 1; attempt <= maxRetries; attempt++) {
+        modem.dataRate(1);         // Data Rate. 0: SF10 BW 125 kHz
         modem.beginPacket();
         modem.write(payload, numBytes);
         int ok = modem.endPacket(true) > 0;  
@@ -119,7 +120,7 @@ void setup() {
         while (1) {}
     }
     Serial.print("Modem started successfully. ");
-    JoinNetwork();
+    //JoinNetwork();
 }
 
 
@@ -181,7 +182,7 @@ void loop() {
     } 
 
     // Print valid parameters (code != 0)
-    int validCount = 0;
+    int validCount = 1; // sample_period is 1st parameter
     Serial.println("idx\tCode\tStatus\tRaw 16-bit register values");
     for (int i = 0; i < numParams; i++) {
         if (codes[i] != 0) {
@@ -208,7 +209,7 @@ void loop() {
             [5-6] -> 2nd uint16_t register -> bytes: [low, high]
         [7-10] -> Time (4 Bytes)        // Register 54
         ------------------- PAYLOAD -------------------
-        [11-12]  -> Sample Period (2 Byte) // Register 0   (on 1st packet)
+        [11-12]  -> Sample Period (1 Byte code + 2 Bytes) // Register 0   (on 1st packet)
         [13-(N-1)] -> Valid parameters (6 Bytes per parameter: 1 byte code + 1 byte status + 2 uint16_t ModBus registers): 
             [i-(i+1)]     -> code
             [(i+2)-(i+3)] -> status
@@ -218,17 +219,17 @@ void loop() {
         [N] -> CRC (1 Bytes)
     */
 
-    Serial.print("Number of valid parameters: "); Serial.print(validCount); 
-    Serial.println(" + sample_period"); 
-    Serial.print("Bytes required for parameters + sample_period: "); Serial.println(validCount*PARAM_BYTES + 2);
+    Serial.print("Number of valid parameters: "); Serial.println(validCount); 
+    //Serial.println(" + sample_period"); 
+    Serial.print("Bytes required for parameters: "); Serial.println(validCount*PARAM_BYTES);
 
     Serial.print("MAX_PAYLOAD: "); Serial.println(MAX_PAYLOAD_SIZE);  
     if (MAX_PAYLOAD_SIZE < METADATA_BYTES+PARAM_BYTES) { // not enough MAX_PAYLOAD_SIZE even for 1 parameter
         Serial.print("ERROR: Can not send any parameter with PAYLOAD_SIZE = "); Serial.println(MAX_PAYLOAD_SIZE);
         while(1) {}
     }
-    int totalPackets = ceil( (float)(validCount+ 1) / MAX_paramsPerPacket );    // Up to MAX_paramsPerPacket params per packet
-    int paramsPerPacket = ceil( (float)(validCount+1) / totalPackets );         // Actual number of params per packet (equal number for all packets)
+    int totalPackets = ceil( (float)(validCount) / MAX_paramsPerPacket );    // Up to MAX_paramsPerPacket params per packet
+    int paramsPerPacket = ceil( (float)(validCount) / totalPackets );         // Actual number of params per packet (equal number for all packets)
     Serial.print("Total packets: "); Serial.print(totalPackets);
     Serial.print(", with parameters per packet: "); Serial.println(paramsPerPacket);
 
@@ -286,13 +287,14 @@ void loop() {
         // PAYLOAD: PARAMETERS
         int remainingParams = paramsPerPacket;
         if (pkt == 0) {  // sample period on 1st packet
+            payload[index++] = 0x00;                 // code=0 to facilitate sample_period decoding
             payload[index++] = sample_period & 0xFF; // 6- register 0 - sample_period 
             payload[index++] = sample_period >> 8; 
             remainingParams--;
             Serial.print("0 (sample_period), ");
         }
 
-        if (index + 4 >= MAX_PAYLOAD_SIZE) break; // avoid overload
+        if (index + 4 >= MAX_PAYLOAD_SIZE) continue; // avoid overload
 
         while (remainingParams > 0 && i < numParams) {
             if (codes[i] != 0 && codes[i] != 51  &&  codes[i] != 54) {
