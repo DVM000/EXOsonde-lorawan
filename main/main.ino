@@ -237,8 +237,8 @@ void loop() {
     uint16_t DATEl, DATEh, TIMEl, TIMEh;
     int idxDate = -1; int idxTime = -1;
     for (int i = 0; i < numParams; i++) {
-        if (codes[i] == 51) idxDate = i;
-        if (codes[i] == 54) idxTime = i;
+        if (codes[i] == 51) idxDate = 2*i;
+        if (codes[i] == 54) idxTime = 2*i;
     }
    
     if (idxDate >= 0) {
