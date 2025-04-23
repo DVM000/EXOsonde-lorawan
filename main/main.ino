@@ -209,8 +209,8 @@ void loop() {
             [5-6] -> 2nd uint16_t register -> bytes: [low, high]
         [7-10] -> Time (4 Bytes)        // Register 54
         ------------------- PAYLOAD -------------------
-        [11-12]  -> Sample Period (1 Byte code + 2 Bytes) // Register 0   (on 1st packet)
-        [13-(N-1)] -> Valid parameters (6 Bytes per parameter: 1 byte code + 1 byte status + 2 uint16_t ModBus registers): 
+        [11-13]  -> Sample Period (1 Byte code + 2 Bytes) // Register 0   (on 1st packet)
+        [14-(N-1)] -> Valid parameters (6 Bytes per parameter: 1 byte code + 1 byte status + 2 uint16_t ModBus registers): 
             [i-(i+1)]     -> code
             [(i+2)-(i+3)] -> status
             [i-(i+1)]     -> 1st uint16_t register -> bytes: [low, high]
