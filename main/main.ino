@@ -31,9 +31,10 @@ String appKey = SECRET_APP_KEY;
 const int JOIN_TIMEOUT = 60000; // max waiting time for joining
 
 // LoRaWAN packet variables
-const int MAX_PAYLOAD_SIZE = 18;               // LoRaWAN payload limit (51 for SF10, 222 for SF8, ...) // https://www.semtech.com/design-support/faq/faq-lorawan/P20
 const int METADATA_BYTES = 1 + 1 + 1 + 8 + 1;  // Reserved + version + deviceID + Date+Time (8B) + CRC
 const int PARAM_BYTES = 1 + 1 + 4;             // 1 byte of code + 1 byte of status + 2 uint16_t registers per parameter 
+const int MAX_PAYLOAD_SIZE = METADATA_BYTES + 3*PARAM_BYTES; // minimum for 1 packet: MEDATADABYTES + 1*PARAM_BYTES
+// There is also a LoRaWAN payload limit for each Spreaing Factor: 51 for SF10, 222 for SF8, ... // https://www.semtech.com/design-support/faq/faq-lorawan/P20
 const int MAX_paramsPerPacket = (MAX_PAYLOAD_SIZE - METADATA_BYTES) / PARAM_BYTES; // ( maximum payload - (header+CRC) ) / bytes_per_parameter
 
 
@@ -323,8 +324,8 @@ void loop() {
         // Send LoRaWAN packet
         // ------------------------------------------------------------------------------------------------------
         Serial.print(". Payload: "); Serial.println(index);
-        Serial.println("--- Sending packet... --- ");
         if (true) { printPayloadHex(payload, index);  }
+        Serial.println("--- Sending packet... --- ");
         bool err = SendPacket(payload, index);
 
         Serial.println();
