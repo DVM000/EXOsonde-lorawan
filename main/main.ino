@@ -33,8 +33,8 @@ const int JOIN_TIMEOUT = 60000; // max waiting time for joining
 // LoRaWAN packet variables
 const int METADATA_BYTES = 1 + 1 + 1 + 8 + 1;  // Reserved + version + deviceID + Date+Time (8B) + CRC
 const int PARAM_BYTES = 1 + 1 + 4;             // 1 byte of code + 1 byte of status + 2 uint16_t registers per parameter 
-const int MAX_PAYLOAD_SIZE = METADATA_BYTES + 3*PARAM_BYTES; // minimum for 1 packet: MEDATADABYTES + 1*PARAM_BYTES
-// There is also a LoRaWAN payload limit for each Spreaing Factor: 51 for SF10, 222 for SF8, ... // https://www.semtech.com/design-support/faq/faq-lorawan/P20
+const int MAX_PAYLOAD_SIZE = METADATA_BYTES + 6*PARAM_BYTES; // minimum for 1 packet: MEDATADABYTES + 1*PARAM_BYTES
+// There is also LoRaWAN payload limit for each Spreaing Factor: 51 for SF10, 222 for SF8, ... // https://www.semtech.com/design-support/faq/faq-lorawan/P20
 const int MAX_paramsPerPacket = (MAX_PAYLOAD_SIZE - METADATA_BYTES) / PARAM_BYTES; // ( maximum payload - (header+CRC) ) / bytes_per_parameter
 
 
@@ -75,6 +75,12 @@ bool JoinNetwork(int maxRetries = 5, int retryDelay = 5000){
 
 bool SendPacket(uint8_t* payload, int numBytes, int maxRetries = 5, int retryDelay = 5000) {
     bool success = false;
+
+    if (payload == nullptr || numBytes <= 0) {
+        Serial.println("Empty or null payload, skipping send.");
+        return false;
+    }
+
     for (int attempt = 1; attempt <= maxRetries; attempt++) {
         modem.dataRate(1);         // Data Rate. 0: SF10 BW 125 kHz
         modem.beginPacket();
@@ -121,7 +127,7 @@ void setup() {
         while (1) {}
     }
     Serial.print("Modem started successfully. ");
-    //JoinNetwork();
+    JoinNetwork();
 }
 
 
@@ -210,7 +216,7 @@ void loop() {
             [5-6] -> 2nd uint16_t register -> bytes: [low, high]
         [7-10] -> Time (4 Bytes)        // Register 54
         ------------------- PAYLOAD -------------------
-        [11-13]  -> Sample Period (1 Byte code + 2 Bytes) // Register 0   (on 1st packet)
+        [11-13]  -> Sample Period (1 Byte code + 2 Bytes)  // Register 0   (on 1st packet)
         [14-(N-1)] -> Valid parameters (6 Bytes per parameter: 1 byte code + 1 byte status + 2 uint16_t ModBus registers): 
             [i-(i+1)]     -> code
             [(i+2)-(i+3)] -> status
@@ -330,6 +336,6 @@ void loop() {
 
         Serial.println();
     } // end for packets
-
+    //while(1) {};
 }
 
