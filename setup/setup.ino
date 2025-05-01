@@ -37,6 +37,8 @@ const int MAX_PAYLOAD_SIZE = METADATA_BYTES + 6*PARAM_BYTES; // minimum for 1 pa
 // There is also LoRaWAN payload limit for each Spreaing Factor: 51 for SF10, 222 for SF8, ... // https://www.semtech.com/design-support/faq/faq-lorawan/P20
 const int MAX_paramsPerPacket = (MAX_PAYLOAD_SIZE - METADATA_BYTES) / PARAM_BYTES; // ( maximum payload - (header+CRC) ) / bytes_per_parameter
 
+// Default sample period (seconds), min = 15
+uint16_t SAMPLE_PERIOD = 15;  
 
 // Functions
 bool JoinNetwork(int maxRetries = 5, int retryDelay = 5000){
@@ -142,8 +144,24 @@ void HandleDownlinkCommand() {
 
     switch (command) {
         case 0x01: // Change Sample Period
-            Serial.print("CMD: Change Sample Period to ");
-            // TODO: add logic to change sample period
+            if (len >= 3) {
+                uint16_t newPeriod = rcv[1] | (rcv[2] << 8);
+                if (newPeriod < 15) {
+                    Serial.print("CMD: Ignored - Sample period too low: ");
+                    Serial.println(newPeriod);
+                } else if (newPeriod > 3600) {
+                    Serial.print("CMD: Ignored - Sample period too high: ");
+                    Serial.println(newPeriod);
+                } else {
+                    newPeriod = constrain(newPeriod, 15, 3600); // safety
+                    SAMPLE_PERIOD = newPeriod;
+                    Serial.print("CMD: Sample period updated to ");
+                    Serial.print(SAMPLE_PERIOD);
+                    Serial.println(" seconds");
+                }
+            } else {
+                Serial.println("CMD Error: Sample period payload too short");
+            }
             break;
         case 0x02: // Force Sample
             Serial.println("CMD: Force Sample triggered");
@@ -168,9 +186,11 @@ int ReadSensorData(uint16_t& sample_period, uint16_t* codes, uint16_t* statuses,
     // ------------------------------------------------------------------------------------------------------
     // Forcing read
     // ------------------------------------------------------------------------------------------------------
-    Serial.print("\n--- Forcing read (waiting for 15 seconds) ---  "); 
+    sample_period = constrain(sample_period, 15, 3600); // safety
+    Serial.print("\n--- Forcing read (waiting for "); Serial.print(sample_period); Serial.println(" seconds) ---");
     modbus.byteToRegister(0x03, 1, 2);
-    for (int i = 1; i < 15; i++) // wait 15 seconds
+
+    for (int i = 1; i <= sample_period; i++) // wait sample_period seconds
     {
          delay(1000);
          Serial.print(i);  Serial.print(" ");
@@ -179,8 +199,7 @@ int ReadSensorData(uint16_t& sample_period, uint16_t* codes, uint16_t* statuses,
     // ------------------------------------------------------------------------------------------------------
     // Read data
     // ------------------------------------------------------------------------------------------------------
-    // Read sample period register (register 0)
-    sample_period = modbus.uint16FromRegister(0x03, 0);
+    // Show sample period
     Serial.println(" "); Serial.print("Sample period: "); Serial.println(sample_period);
 
     // Read 32 parameter codes (registers 128–159)
@@ -369,8 +388,12 @@ void setup() {
     Serial.begin(serialBaud);            // serial bus communication with laptop
     while (!Serial);                     // wait until port is ready on MKR board
 
-    modbusSerial.begin(modbusBaudRate);  // modbus communicatio with Sonde device
+    modbusSerial.begin(modbusBaudRate);  // modbus communication with Sonde device
     modbus.begin(modbusAddress, modbusSerial, 6);
+
+    // Set sample period to 0 (manual mode), mkrwan will trigger sampling
+    modbus.byteToRegister(0x03, 0, 0);  
+    Serial.println("Set sample period to 0 (manual sampling mode)");
 
     //Serial.println("Starting LoRa modem...");
     if (!modem.begin(US915)) { // US915: (902–928 MHz)
@@ -383,12 +406,11 @@ void setup() {
 
 void loop() {
     const int numParams = 32;
-    uint16_t sample_period;
     uint16_t codes[numParams];
     uint16_t statuses[numParams];
     uint16_t values[2 * numParams];
 
-    int validCount = ReadSensorData(sample_period, codes, statuses, values, numParams);
-    BuildAndSendLoRaPackets(sample_period, codes, statuses, values, numParams, validCount);
+    int validCount = ReadSensorData(SAMPLE_PERIOD, codes, statuses, values, numParams);
+    BuildAndSendLoRaPackets(SAMPLE_PERIOD, codes, statuses, values, numParams, validCount);
 }
 
