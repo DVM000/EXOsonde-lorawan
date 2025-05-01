@@ -97,6 +97,7 @@ The LoRaWAN payload will be divided into multiple packets, each conforming to th
 [N]   -> CRC8 byte
 ```
 
-
+### Downlink Command Structure
+>TODO: write the command structure
 
 
