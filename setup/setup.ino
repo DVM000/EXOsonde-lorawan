@@ -175,6 +175,21 @@ void ForceSample() {
     }
 }
 
+void ForceWipe() {
+    // Send force wipe command to adapter with one retry attempt
+    bool success = modbus.byteToRegister(0x03, FORCE_WIPE_REGISTER, 2);
+    if (!success) {
+        success = modbus.byteToRegister(0x03, FORCE_WIPE_REGISTER, 2);
+    }
+
+    // Check if the command was sent successfully
+    if (success) {
+        Serial.println("CMD: Force wipe command sent to adapter");
+    } else {
+        Serial.println("CMD Error: Failed to send force wipe command to adapter");
+    }
+}
+
 void HandleDownlinkCommand() {
     if (!modem.available()) {
         Serial.println("No downlink message received.");
@@ -219,7 +234,7 @@ void HandleDownlinkCommand() {
             break;
         case 0x03: // Force Wipe
             Serial.println("CMD: Force Wipe triggered");
-            // TODO: Add logic to wipe data
+            ForceWipe();
             break;
         case 0x04: // Change Parameter Types
             Serial.print("CMD: Change Parameter Types to ");
