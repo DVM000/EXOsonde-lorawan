@@ -143,7 +143,6 @@ void HandleDownlinkCommand() {
     switch (command) {
         case 0x01: // Change Sample Period
             Serial.print("CMD: Change Sample Period to ");
-            Serial.println(newPeriod);
             // TODO: add logic to change sample period
             break;
         case 0x02: // Force Sample
@@ -156,7 +155,6 @@ void HandleDownlinkCommand() {
             break;
         case 0x04: // Change Parameter Types
             Serial.print("CMD: Change Parameter Types to ");
-            Serial.println(paramType);
             // TODO: Add Parameter Type handling logic
             break;
         default:
@@ -166,33 +164,7 @@ void HandleDownlinkCommand() {
     }
 }
 
-void setup() {
-
-    Serial.begin(serialBaud);            // serial bus communication with laptop
-    while (!Serial);                     // wait until port is ready on MKR board
-
-    modbusSerial.begin(modbusBaudRate);  // modbus communicatio with Sonde device
-    modbus.begin(modbusAddress, modbusSerial, 6);
-
-    //Serial.println("Starting LoRa modem...");
-    if (!modem.begin(US915)) { // US915: (902–928 MHz)
-        Serial.println("Failed to start modem module");
-        while (1) {}
-    }
-    Serial.print("Modem started successfully. ");
-    JoinNetwork();
-}
-
-
-void loop() {
-    
-    const int numParams = 32;  // maximum number of parameters
-    uint16_t sample_period;    
-    uint16_t codes[numParams];
-    uint16_t statuses[numParams];
-    uint16_t values[2*numParams]; // 2 uint16 registers per floating-point parameter value, little endian
-    byte data_byte; // read data from register
-
+int ReadSensorData(uint16_t& sample_period, uint16_t* codes, uint16_t* statuses, uint16_t* values, int numParams) {
     // ------------------------------------------------------------------------------------------------------
     // Forcing read
     // ------------------------------------------------------------------------------------------------------
@@ -239,8 +211,8 @@ void loop() {
     if (verbose) {
         for (int i = 0; i < 2*numParams; i++) {
             Serial.print(values[i]); Serial.print(","); }
-    } 
-
+    }
+    
     // Print valid parameters (code != 0)
     int validCount = 1; // sample_period is 1st parameter
     Serial.println("idx\tCode\tStatus\tRaw 16-bit register values");
@@ -256,6 +228,14 @@ void loop() {
         }
     }
 
+    Serial.print("Number of valid parameters: "); Serial.println(validCount); 
+    //Serial.println(" + sample_period"); 
+    Serial.print("Bytes required for parameters: "); Serial.println(validCount*PARAM_BYTES);
+
+    return validCount;
+}
+
+void BuildAndSendLoRaPackets(uint16_t sample_period, uint16_t* codes, uint16_t* statuses, uint16_t* values, int numParams, int validCount) {
     // ------------------------------------------------------------------------------------------------------
     // Build Lorawan packet
     // ------------------------------------------------------------------------------------------------------
@@ -278,18 +258,14 @@ void loop() {
         ------------------- CRC -------------------
         [N] -> CRC (1 Bytes)
     */
-
-    Serial.print("Number of valid parameters: "); Serial.println(validCount); 
-    //Serial.println(" + sample_period"); 
-    Serial.print("Bytes required for parameters: "); Serial.println(validCount*PARAM_BYTES);
-
     Serial.print("MAX_PAYLOAD: "); Serial.println(MAX_PAYLOAD_SIZE);  
     if (MAX_PAYLOAD_SIZE < METADATA_BYTES+PARAM_BYTES) { // not enough MAX_PAYLOAD_SIZE even for 1 parameter
         Serial.print("ERROR: Can not send any parameter with PAYLOAD_SIZE = "); Serial.println(MAX_PAYLOAD_SIZE);
-        while(1) {}
+        return;
     }
-    int totalPackets = ceil( (float)(validCount) / MAX_paramsPerPacket );    // Up to MAX_paramsPerPacket params per packet
-    int paramsPerPacket = ceil( (float)(validCount) / totalPackets );         // Actual number of params per packet (equal number for all packets)
+
+    int totalPackets = ceil((float)(validCount) / MAX_paramsPerPacket);
+    int paramsPerPacket = ceil((float)(validCount) / totalPackets);
     Serial.print("Total packets: "); Serial.print(totalPackets);
     Serial.print(", with parameters per packet: "); Serial.println(paramsPerPacket);
 
@@ -300,7 +276,7 @@ void loop() {
         if (codes[i] == 51) idxDate = 2*i;
         if (codes[i] == 54) idxTime = 2*i;
     }
-   
+
     if (idxDate >= 0) {
         DATEl = values[idxDate];
         DATEh = values[idxDate+1];
@@ -319,8 +295,7 @@ void loop() {
         TIMEh = 0x00;
     }
 
-    // Build packets
-    int i = 0; // parameter to be sent
+    int i = 0;  // Index for parameters
 
     for (int pkt = 0; pkt < totalPackets; pkt++) {
         Serial.print("--- Packet #"); Serial.print(pkt+1); Serial.print(", with params: ");
@@ -328,7 +303,7 @@ void loop() {
         uint8_t payload[MAX_PAYLOAD_SIZE];
         int index = 0;
 
-        // HEADER 
+        // --- HEADER ---
         payload[index++] = 0x00;              // 1- Reserved Byte
         payload[index++] = version;           // 2- HW/SW version B
         payload[index++] = devID; //.toInt(); // 3- deviceId
@@ -342,9 +317,9 @@ void loop() {
         payload[index++] = TIMEl & 0xFF;      // 5- Time
         payload[index++] = TIMEl >> 8;       
         payload[index++] = TIMEh & 0xFF;      // 5- Time (8 less significant bits of 2nd uint16)
-        payload[index++] = TIMEh >> 8;        
+        payload[index++] = TIMEh >> 8;   
 
-        // PAYLOAD: PARAMETERS
+        // --- PAYLOAD (PARAMETERS) ---
         int remainingParams = paramsPerPacket;
         if (pkt == 0) {  // sample period on 1st packet
             payload[index++] = 0x00;                 // code=0 to facilitate sample_period decoding
@@ -373,23 +348,47 @@ void loop() {
             i++;
         }
 
-        // CRC
+        // --- CRC ---
         CRC8 crc;
         crc.add((uint8_t*) payload, index);
         uint8_t crc_value = crc.calc();
         payload[index++] = crc_value;  // 8- CRC
 
-        // ------------------------------------------------------------------------------------------------------
-        // Send LoRaWAN packet & Receive downlink message
-        // ------------------------------------------------------------------------------------------------------
+        // --- SEND ---
         Serial.print(". Payload: "); Serial.println(index);
         if (true) { printPayloadHex(payload, index);  }
         Serial.println("--- Sending packet... --- ");
-        bool err = SendPacket(payload, index);
-        HandleDownlinkCommand();  // read and act on downlink message
-
+        SendPacket(payload, index);
         Serial.println();
-    } // end for packets
-    //while(1) {};
+    }
+    HandleDownlinkCommand();  // Check if any downlink is received
+}
+
+void setup() {
+
+    Serial.begin(serialBaud);            // serial bus communication with laptop
+    while (!Serial);                     // wait until port is ready on MKR board
+
+    modbusSerial.begin(modbusBaudRate);  // modbus communicatio with Sonde device
+    modbus.begin(modbusAddress, modbusSerial, 6);
+
+    //Serial.println("Starting LoRa modem...");
+    if (!modem.begin(US915)) { // US915: (902–928 MHz)
+        Serial.println("Failed to start modem module");
+        while (1) {}
+    }
+    Serial.print("Modem started successfully. ");
+    JoinNetwork();
+}
+
+void loop() {
+    const int numParams = 32;
+    uint16_t sample_period;
+    uint16_t codes[numParams];
+    uint16_t statuses[numParams];
+    uint16_t values[2 * numParams];
+
+    int validCount = ReadSensorData(sample_period, codes, statuses, values, numParams);
+    BuildAndSendLoRaPackets(sample_period, codes, statuses, values, numParams, validCount);
 }
 
