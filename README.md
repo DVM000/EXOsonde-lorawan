@@ -6,6 +6,12 @@ board + [antenna](https://store.arduino.cc/products/dipole-pentaband-waterproof-
 
 ---
 
+## Directory Set Up
+
+- [codec](./codec/): contains the decoder in python.
+- [main](./main/): contains the main source code for the arduino mkrwan 1310. If deploying, use this source code.
+- [setup](./setup/): contains the setup code for the arduino mkrwan 1310. This is a copy of the main source code but with `serial` print out to help users monitor/debug their code or retrieve the `DevEUI`.
+
 ## Description
 
 The system periodically reads parameters from the EXO sonde, extracting valid sensor values. These values are packed into a structured LoRaWAN payload including:
@@ -26,7 +32,7 @@ The payload is transmitted over a LoRaWAN network using OTAA.
 - **EXO Sonde** connected to **Signal Output Adapter for EXO Sonde** 
 - **Arduino**: `VCC`, `GND`, `14-TX`, `13-RX` connected to Signal Adapter (hardware `Serial1` for communication with EXO sonde)
 - For monitoring/debugging: **Laptop** connected to the Arduino via USB (hardware default `Serial` interface) 
-
+>NOTE: monitoring/debugging is only used in setup.ino NOT in main.ino
 ---
 
 ## Requirements
