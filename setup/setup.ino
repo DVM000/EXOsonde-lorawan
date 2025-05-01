@@ -110,8 +110,61 @@ void printPayloadHex(uint8_t* payload, int numBytes) {
       }
     Serial.println();
     Serial.println("               [reserved (1) | version (1) | devId (1) | DATE (4) | TIME (4) | sample_period (2) / VALID PARAMETERS (6*n) | CRC (1)]");
+}
+
+void HandleDownlinkCommand() {
+    if (!modem.available()) {
+        Serial.println("No downlink message received.");
+        return;
     }
 
+    uint8_t rcv[64];  // adjust size based on max expected command length
+    int len = 0;
+
+    while (modem.available()) {
+        rcv[len++] = (uint8_t)modem.read();
+    }
+
+    Serial.print("Downlink [");
+    Serial.print(len);
+    Serial.print(" bytes]: ");
+    for (int i = 0; i < len; i++) {
+        Serial.print("0x");
+        if (rcv[i] < 0x10) Serial.print("0");
+        Serial.print(rcv[i], HEX);
+        Serial.print(" ");
+    }
+    Serial.println();
+
+    if (len == 0) return;
+
+    uint8_t command = rcv[0];
+
+    switch (command) {
+        case 0x01: // Change Sample Period
+            Serial.print("CMD: Change Sample Period to ");
+            Serial.println(newPeriod);
+            // TODO: add logic to change sample period
+            break;
+        case 0x02: // Force Sample
+            Serial.println("CMD: Force Sample triggered");
+            // TODO: Add logic to force a sample
+            break;
+        case 0x03: // Force Wipe
+            Serial.println("CMD: Force Wipe triggered");
+            // TODO: Add logic to wipe data
+            break;
+        case 0x04: // Change Parameter Types
+            Serial.print("CMD: Change Parameter Types to ");
+            Serial.println(paramType);
+            // TODO: Add Parameter Type handling logic
+            break;
+        default:
+            Serial.print("CMD Error: Unknown command code 0x");
+            Serial.println(command, HEX);
+            break;
+    }
+}
 
 void setup() {
 
@@ -327,12 +380,13 @@ void loop() {
         payload[index++] = crc_value;  // 8- CRC
 
         // ------------------------------------------------------------------------------------------------------
-        // Send LoRaWAN packet
+        // Send LoRaWAN packet & Receive downlink message
         // ------------------------------------------------------------------------------------------------------
         Serial.print(". Payload: "); Serial.println(index);
         if (true) { printPayloadHex(payload, index);  }
         Serial.println("--- Sending packet... --- ");
         bool err = SendPacket(payload, index);
+        HandleDownlinkCommand();  // read and act on downlink message
 
         Serial.println();
     } // end for packets
