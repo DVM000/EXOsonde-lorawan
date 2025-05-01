@@ -43,7 +43,7 @@ The payload is transmitted over a LoRaWAN network using OTAA.
 - [`CRC`](https://github.com/RobTillaart/CRC)
 - [`MKRWAN`](https://docs.arduino.cc/libraries/mkrwan)
 
-Install via the Arduino IDE Library Manager.
+Install via the [Arduino IDE](https://www.arduino.cc/en/software/) Library Manager.
 
 ---
 
