@@ -37,7 +37,7 @@ const int MAX_PAYLOAD_SIZE = METADATA_BYTES + 6*PARAM_BYTES; // minimum for 1 pa
 // There is also LoRaWAN payload limit for each Spreaing Factor: 51 for SF10, 222 for SF8, ... // https://www.semtech.com/design-support/faq/faq-lorawan/P20
 const int MAX_paramsPerPacket = (MAX_PAYLOAD_SIZE - METADATA_BYTES) / PARAM_BYTES; // ( maximum payload - (header+CRC) ) / bytes_per_parameter
 
-// Default sample period (seconds), min = 60 sec, max = 7200 sec
+// Default lorawan transmit period (seconds), min = 60 sec, max = 7200 sec
 uint16_t TRANSMIT_PERIOD = 300;
 // Default adapter sample period (seconds), minimum = 15 sec, max = 3600 sec
 uint16_t ADAPTER_PERIOD = TRANSMIT_PERIOD / 2;
