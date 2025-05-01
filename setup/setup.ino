@@ -24,6 +24,17 @@ const int32_t serialBaud = 115200;
 HardwareSerial& modbusSerial = Serial1; // modBus communication with Sonde
 modbusMaster modbus;
 
+// Modbus registers
+const int SAMPLE_PERIOD_REGISTER = 0;
+const int FORCE_SAMPLE_REGISTER = 1;
+const int FORCE_WIPE_REGISTER = 2;
+const int MIN_PARAM_TYPE_REGISTER = 128; // 128-159
+const int MAX_PARAM_TYPE_REGISTER = 159;
+const int MIN_PARAM_STATUS_REGISTER = 256; // 256-287
+const int MAX_PARAM_STATUS_REGISTER = 287;
+const int MIN_PARAM_VALUE_REGISTER = 384; // 384-447
+const int MAX_PARAM_VALUE_REGISTER = 447;
+
 // LoRaWAN variables
 LoRaModem modem;
 String appEui = SECRET_APP_EUI; // OTAA credentials
@@ -134,7 +145,7 @@ void changeTransmitPeriod(uint16_t newPeriod) {
         // Set adapter sample period to half of send period
         ADAPTER_PERIOD = TRANSMIT_PERIOD / 2;
         ADAPTER_PERIOD = constrain(ADAPTER_PERIOD, 15, 3600);  // safety
-        bool success = modbus.byteToRegister(0x03, 0, ADAPTER_PERIOD);
+        bool success = modbus.byteToRegister(0x03, SAMPLE_PERIOD_REGISTER, ADAPTER_PERIOD);
 
         if (success) {
             Serial.print("Adapter sample period set to "); Serial.print(ADAPTER_PERIOD); Serial.println(" seconds");
@@ -146,9 +157,9 @@ void changeTransmitPeriod(uint16_t newPeriod) {
 
 void ForceSample() {
     // Send force sample command to adapter with one retry attempt
-    bool success = modbus.byteToRegister(0x03, 1, 2);
+    bool success = modbus.byteToRegister(0x03, FORCE_SAMPLE_REGISTER, 2);
     if (!success) {
-        success = modbus.byteToRegister(0x03, 1, 2);
+        success = modbus.byteToRegister(0x03, FORCE_SAMPLE_REGISTER, 2);
     }
 
     // Check if the command was sent successfully
@@ -228,13 +239,13 @@ int ReadSensorData( uint16_t& sample_period, uint16_t* codes, uint16_t* statuses
     // Read data
     // ------------------------------------------------------------------------------------------------------
     // Read sample period register (register 0)
-    sample_period = modbus.uint16FromRegister(0x03, 0);
+    sample_period = modbus.uint16FromRegister(0x03, SAMPLE_PERIOD_REGISTER);
     Serial.println(" "); Serial.print("Sample period: "); Serial.println(sample_period);
 
     // Read 32 parameter codes (registers 128–159)
     if (verbose) { Serial.println(" "); Serial.println("Codes:"); }
     for (int i = 0; i < numParams; i++) {
-        codes[i] = modbus.uint16FromRegister(0x03, 128 + i); 
+        codes[i] = modbus.uint16FromRegister(0x03, MIN_PARAM_TYPE_REGISTER + i); 
         if (verbose) { Serial.print(codes[i]);  Serial.print(","); }    
     }
 
@@ -242,7 +253,7 @@ int ReadSensorData( uint16_t& sample_period, uint16_t* codes, uint16_t* statuses
     if (verbose) { Serial.println(" "); Serial.println("Statuses:"); }
     for (int i = 0; i < numParams; i++) {
         if (codes[i] != 0) { // more efficient: only read valid parameters
-            statuses[i] = modbus.uint16FromRegister(0x03, 256 + i);
+            statuses[i] = modbus.uint16FromRegister(0x03, MIN_PARAM_STATUS_REGISTER + i);
         }
         if (verbose) { Serial.print(statuses[i]);  Serial.print(","); }
     }
@@ -251,8 +262,8 @@ int ReadSensorData( uint16_t& sample_period, uint16_t* codes, uint16_t* statuses
     if (verbose) { Serial.println(" "); Serial.println("Values:"); }
     for (int i = 0; i < numParams; i++) {
         if (codes[i] != 0) { // more efficient: only read valid parameters
-            values[2*i]   = modbus.uint16FromRegister(0x03, 384 + 2*i, bigEndian);
-            values[2*i+1] = modbus.uint16FromRegister(0x03, 384 + 2*i+1, bigEndian);
+            values[2*i]   = modbus.uint16FromRegister(0x03, MIN_PARAM_VALUE_REGISTER + 2*i, bigEndian);
+            values[2*i+1] = modbus.uint16FromRegister(0x03, MIN_PARAM_VALUE_REGISTER + 2*i+1, bigEndian);
             if (verbose) {  Serial.print(values[2*i]); Serial.print(","); Serial.print(values[2*i+1]); Serial.print(","); }
         }
     }
@@ -421,7 +432,7 @@ void setup() {
     modbus.begin(modbusAddress, modbusSerial, 6);
 
     // Set Adapter samples
-    modbus.byteToRegister(0x03, 0, ADAPTER_PERIOD);  
+    modbus.byteToRegister(0x03, SAMPLE_PERIOD_REGISTER, ADAPTER_PERIOD);  
     Serial.println("Set adapter sample period");
 
     //Serial.println("Starting LoRa modem...");
