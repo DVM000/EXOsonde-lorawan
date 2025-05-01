@@ -39,7 +39,7 @@ const int MAX_paramsPerPacket = (MAX_PAYLOAD_SIZE - METADATA_BYTES) / PARAM_BYTE
 
 // Default lorawan transmit period (seconds), min = 60 sec, max = 7200 sec
 uint16_t TRANSMIT_PERIOD = 300;
-// Default adapter sample period (seconds), minimum = 15 sec, max = 3600 sec
+// Default adapter sample period (seconds), min = 15 sec, max = 3600 sec
 uint16_t ADAPTER_PERIOD = TRANSMIT_PERIOD / 2;
 // Force Sample flag
 volatile bool FORCE_SAMPLE = false;
