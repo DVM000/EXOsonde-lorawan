@@ -118,6 +118,52 @@ void printPayloadHex(uint8_t* payload, int numBytes) {
     Serial.println("               [reserved (1) | version (1) | devId (1) | DATE (4) | TIME (4) | sample_period (2) / VALID PARAMETERS (6*n) | CRC (1)]");
 }
 
+void changeTransmitPeriod(uint16_t newPeriod) {
+    if (newPeriod < 60) {
+        Serial.print("CMD: Ignored - Transmit period too low: ");
+        Serial.println(newPeriod);
+    } else if (newPeriod > 7200) {
+        Serial.print("CMD: Ignored - Transmit period too high: ");
+        Serial.println(newPeriod);
+    } else {
+        TRANSMIT_PERIOD = constrain(newPeriod, 60, 7200); // safety
+        Serial.print("CMD: Transmit period set to ");
+        Serial.print(TRANSMIT_PERIOD);
+        Serial.println(" seconds");
+
+        // Set adapter sample period to half of send period
+        ADAPTER_PERIOD = TRANSMIT_PERIOD / 2;
+        ADAPTER_PERIOD = constrain(ADAPTER_PERIOD, 15, 3600);  // safety
+        bool success = modbus.byteToRegister(0x03, 0, ADAPTER_PERIOD);
+
+        if (success) {
+            Serial.print("Adapter sample period set to "); Serial.print(ADAPTER_PERIOD); Serial.println(" seconds");
+        } else {
+            Serial.println("WARNING: Failed to write adapter sample period");
+        }
+    }
+}
+
+void ForceSample() {
+    // Send force sample command to adapter with one retry attempt
+    bool success = modbus.byteToRegister(0x03, 1, 2);
+    if (!success) {
+        success = modbus.byteToRegister(0x03, 1, 2);
+    }
+
+    // Check if the command was sent successfully
+    if (success) {
+        // Wait for adapter to complete sampling (minimum 15 sec)
+        for (int i = 1; i <= 15; i++) {
+            delay(1000);
+            Serial.print(i); Serial.print(" ");
+        }
+        FORCE_SAMPLE = true;  // Skip wait in main loop
+    } else {
+        Serial.println("CMD Error: Failed to send force sample command to adapter");
+    }
+}
+
 void HandleDownlinkCommand() {
     if (!modem.available()) {
         Serial.println("No downlink message received.");
@@ -149,43 +195,16 @@ void HandleDownlinkCommand() {
     switch (command) {
         case 0x01: // Change LoRaWAN Transmit Period
             if (len >= 3) {
+                Serial.println("CMD: Change Lorawan Transmit Period triggered");
                 uint16_t newPeriod = rcv[1] | (rcv[2] << 8);
-                if (newPeriod < 60) {
-                    Serial.print("CMD: Ignored - Transmit period too low: ");
-                    Serial.println(newPeriod);
-                } else if (newPeriod > 7200) {
-                    Serial.print("CMD: Ignored - Transmit period too high: ");
-                    Serial.println(newPeriod);
-                } else {
-                    TRANSMIT_PERIOD = constrain(newPeriod, 60, 7200); // safety
-                    Serial.print("CMD: Transmit period set to ");
-                    Serial.print(TRANSMIT_PERIOD);
-                    Serial.println(" seconds");
-        
-                    // Set adapter sample period to half of send period
-                    ADAPTER_PERIOD = TRANSMIT_PERIOD / 2;
-                    ADAPTER_PERIOD = constrain(ADAPTER_PERIOD, 15, 3600);  // safety
-                    bool success = modbus.byteToRegister(0x03, 0, ADAPTER_PERIOD);
-        
-                    if (success) {
-                        Serial.print("Adapter sample period set to "); Serial.print(ADAPTER_PERIOD); Serial.println(" seconds");
-                    } else {
-                        Serial.println("WARNING: Failed to write adapter sample period");
-                    }
-                }
+                changeTransmitPeriod(newPeriod);
             } else {
                 Serial.println("CMD Error: Sample period payload too short");
             }
             break;
         case 0x02: // Force Sample
             Serial.println("CMD: Force Sample triggered");
-            FORCE_SAMPLE = true;
-            modbus.byteToRegister(0x03, 1, 2);
-            for (int i = 1; i < 15; i++) // wait 15 sec to allow the data to go into registers
-            {
-                 delay(1000);
-                 Serial.print(i);  Serial.print(" ");
-            }
+            ForceSample();
             break;
         case 0x03: // Force Wipe
             Serial.println("CMD: Force Wipe triggered");
