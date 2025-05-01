@@ -34,6 +34,14 @@ const int MIN_PARAM_STATUS_REGISTER = 256; // 256-287
 const int MAX_PARAM_STATUS_REGISTER = 287;
 const int MIN_PARAM_VALUE_REGISTER = 384; // 384-447
 const int MAX_PARAM_VALUE_REGISTER = 447;
+const int MAX_PARAM_CODES = 32; // 32 parameters
+const uint8_t VALID_PARAM_CODES[] = {
+    1, 2, 3, 4, 5, 6, 7, 10, 12, 17, 18, 19, 20, 21, 22, 23,
+    28, 37, 47, 48, 51, 52, 53, 54, 95, 101, 106, 108, 110,
+    112, 145, 190, 191, 193, 194, 201, 202, 204, 211, 212,
+    214, 215, 216, 217, 218, 223, 225, 226, 227, 228, 229,
+    230, 237, 238, 239, 240, 241, 242, 243
+};
 
 // LoRaWAN variables
 LoRaModem modem;
@@ -190,6 +198,41 @@ void ForceWipe() {
     }
 }
 
+bool isValidParameterCode(uint8_t code) {
+    for (uint8_t valid : VALID_PARAM_CODES) {
+        if (code == valid) return true;
+    }
+    return false;
+}
+
+void changeParamType(int Params, uint8_t rcv[]) {
+    bool writeSuccess = true;
+
+    for (int i = 0; i < Params; i++) {
+        uint8_t paramCode = rcv[i + 1];
+        Serial.print(paramCode); Serial.print(" ");
+
+        if (!isValidParameterCode(paramCode)) {
+            Serial.print("\nCMD Error: Invalid parameter code "); Serial.println(paramCode);
+            writeSuccess = false;
+            break;
+        }
+
+        if (!modbus.byteToRegister(0x03, MIN_PARAM_TYPE_REGISTER + i, paramCode)) {
+            Serial.print("\nCMD Error: Failed to write parameter code "); Serial.println(paramCode);
+            writeSuccess = false;
+            break;
+        }
+    }
+
+    if (writeSuccess) {
+        modbus.byteToRegister(0x03, MIN_PARAM_TYPE_REGISTER + Params, 0);  // Terminate with 0
+        Serial.println("\nCMD: Parameter types updated successfully.");
+    } else {
+        Serial.println("CMD: Failed to write parameter types.");
+    }
+}
+
 void HandleDownlinkCommand() {
     if (!modem.available()) {
         Serial.println("No downlink message received.");
@@ -237,8 +280,14 @@ void HandleDownlinkCommand() {
             ForceWipe();
             break;
         case 0x04: // Change Parameter Types
-            Serial.print("CMD: Change Parameter Types to ");
-            // TODO: Add Parameter Type handling logic
+            if (len < 2) {
+                Serial.println("CMD Error: No parameter types provided.");
+                break;
+            } else {
+                Serial.print("CMD: Change Parameter Types triggered");
+                const int Params = min(len - 1, MAX_PARAM_CODES);  // max 32 parameters
+                changeParamType(Params, rcv);
+            }
             break;
         default:
             Serial.print("CMD Error: Unknown command code 0x");
