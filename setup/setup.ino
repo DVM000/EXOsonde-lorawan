@@ -509,10 +509,9 @@ void setup() {
 }
 
 void loop() {
-    const int numParams = 32;
-    uint16_t codes[numParams];
-    uint16_t statuses[numParams];
-    uint16_t values[2 * numParams];
+    uint16_t codes[MAX_PARAM_CODES];
+    uint16_t statuses[MAX_PARAM_CODES];
+    uint16_t values[2 * MAX_PARAM_CODES];
     uint16_t sample_period;
 
     // ------------------------------------------------------------------------------------------------------
@@ -533,8 +532,8 @@ void loop() {
     // ------------------------------------------------------------------------------------------------------
     // Start transmission
     // ------------------------------------------------------------------------------------------------------
-    int validCount = ReadSensorData(sample_period, codes, statuses, values, numParams);
-    BuildAndSendLoRaPackets(sample_period, codes, statuses, values, numParams, validCount);
+    int validCount = ReadSensorData(sample_period, codes, statuses, values, MAX_PARAM_CODES);
+    BuildAndSendLoRaPackets(sample_period, codes, statuses, values, MAX_PARAM_CODES, validCount);
 
     // Reset force sample flag
     FORCE_SAMPLE = false;
