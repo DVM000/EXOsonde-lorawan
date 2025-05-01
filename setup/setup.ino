@@ -37,8 +37,10 @@ const int MAX_PAYLOAD_SIZE = METADATA_BYTES + 6*PARAM_BYTES; // minimum for 1 pa
 // There is also LoRaWAN payload limit for each Spreaing Factor: 51 for SF10, 222 for SF8, ... // https://www.semtech.com/design-support/faq/faq-lorawan/P20
 const int MAX_paramsPerPacket = (MAX_PAYLOAD_SIZE - METADATA_BYTES) / PARAM_BYTES; // ( maximum payload - (header+CRC) ) / bytes_per_parameter
 
-// Default sample period (seconds), min = 15
-uint16_t SAMPLE_PERIOD = 15;  
+// Default sample period (seconds), min = 60 sec, max = 7200 sec
+uint16_t TRANSMIT_PERIOD = 300;
+// Default adapter sample period (seconds), minimum = 15 sec, max = 3600 sec
+uint16_t ADAPTER_PERIOD = TRANSMIT_PERIOD / 2; 
 
 // Functions
 bool JoinNetwork(int maxRetries = 5, int retryDelay = 5000){
@@ -143,21 +145,31 @@ void HandleDownlinkCommand() {
     uint8_t command = rcv[0];
 
     switch (command) {
-        case 0x01: // Change Sample Period
+        case 0x01: // Change LoRaWAN Transmit Period
             if (len >= 3) {
                 uint16_t newPeriod = rcv[1] | (rcv[2] << 8);
-                if (newPeriod < 15) {
-                    Serial.print("CMD: Ignored - Sample period too low: ");
+                if (newPeriod < 60) {
+                    Serial.print("CMD: Ignored - Transmit period too low: ");
                     Serial.println(newPeriod);
-                } else if (newPeriod > 3600) {
-                    Serial.print("CMD: Ignored - Sample period too high: ");
+                } else if (newPeriod > 7200) {
+                    Serial.print("CMD: Ignored - Transmit period too high: ");
                     Serial.println(newPeriod);
                 } else {
-                    newPeriod = constrain(newPeriod, 15, 3600); // safety
-                    SAMPLE_PERIOD = newPeriod;
-                    Serial.print("CMD: Sample period updated to ");
-                    Serial.print(SAMPLE_PERIOD);
+                    TRANSMIT_PERIOD = constrain(newPeriod, 60, 7200); // safety
+                    Serial.print("CMD: Transmit period set to ");
+                    Serial.print(TRANSMIT_PERIOD);
                     Serial.println(" seconds");
+        
+                    // Set adapter sample period to half of send period
+                    ADAPTER_PERIOD = TRANSMIT_PERIOD / 2;
+                    ADAPTER_PERIOD = constrain(ADAPTER_PERIOD, 15, 3600);  // safety
+                    bool success = modbus.byteToRegister(0x03, 0, ADAPTER_PERIOD);
+        
+                    if (success) {
+                        Serial.print("Adapter sample period set to "); Serial.print(ADAPTER_PERIOD); Serial.println(" seconds");
+                    } else {
+                        Serial.println("WARNING: Failed to write adapter sample period");
+                    }
                 }
             } else {
                 Serial.println("CMD Error: Sample period payload too short");
@@ -182,15 +194,15 @@ void HandleDownlinkCommand() {
     }
 }
 
-int ReadSensorData(uint16_t& sample_period, uint16_t* codes, uint16_t* statuses, uint16_t* values, int numParams) {
+int ReadSensorData(uint16_t transmit_period, uint16_t* codes, uint16_t* statuses, uint16_t* values, int numParams, uint16_t& sample_period)
+{
     // ------------------------------------------------------------------------------------------------------
-    // Forcing read
+    // Waiting for Read
     // ------------------------------------------------------------------------------------------------------
-    sample_period = constrain(sample_period, 15, 3600); // safety
-    Serial.print("\n--- Forcing read (waiting for "); Serial.print(sample_period); Serial.println(" seconds) ---");
-    modbus.byteToRegister(0x03, 1, 2);
+    transmit_period = constrain(transmit_period, 60, 7200); // safety
+    Serial.print("\n--- Waiting for "); Serial.print(transmit_period); Serial.println(" seconds ---");
 
-    for (int i = 1; i <= sample_period; i++) // wait sample_period seconds
+    for (int i = 1; i <= transmit_period; i++) // wait transmit_period seconds
     {
          delay(1000);
          Serial.print(i);  Serial.print(" ");
@@ -199,7 +211,8 @@ int ReadSensorData(uint16_t& sample_period, uint16_t* codes, uint16_t* statuses,
     // ------------------------------------------------------------------------------------------------------
     // Read data
     // ------------------------------------------------------------------------------------------------------
-    // Show sample period
+    // Read sample period register (register 0)
+    sample_period = modbus.uint16FromRegister(0x03, 0);
     Serial.println(" "); Serial.print("Sample period: "); Serial.println(sample_period);
 
     // Read 32 parameter codes (registers 128–159)
@@ -391,9 +404,9 @@ void setup() {
     modbusSerial.begin(modbusBaudRate);  // modbus communication with Sonde device
     modbus.begin(modbusAddress, modbusSerial, 6);
 
-    // Set sample period to 0 (manual mode), mkrwan will trigger sampling
-    modbus.byteToRegister(0x03, 0, 0);  
-    Serial.println("Set sample period to 0 (manual sampling mode)");
+    // Set Adapter samples
+    modbus.byteToRegister(0x03, 0, ADAPTER_PERIOD);  
+    Serial.println("Set adapter sample period");
 
     //Serial.println("Starting LoRa modem...");
     if (!modem.begin(US915)) { // US915: (902–928 MHz)
@@ -409,8 +422,9 @@ void loop() {
     uint16_t codes[numParams];
     uint16_t statuses[numParams];
     uint16_t values[2 * numParams];
-
-    int validCount = ReadSensorData(SAMPLE_PERIOD, codes, statuses, values, numParams);
-    BuildAndSendLoRaPackets(SAMPLE_PERIOD, codes, statuses, values, numParams, validCount);
+    uint16_t sample_period;
+    
+    int validCount = ReadSensorData(TRANSMIT_PERIOD, codes, statuses, values, numParams, sample_period);
+    BuildAndSendLoRaPackets(sample_period, codes, statuses, values, numParams, validCount);
 }
 
