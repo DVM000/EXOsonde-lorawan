@@ -143,6 +143,17 @@ void loop() {
         }
     } 
 
+    // count valid parameters (code != 0)
+    int validCount = 1; // sample_period is 1st parameter
+    for (int i = 0; i < numParams; i++) {
+        if (codes[i] != 0) {
+            validCount++;
+            // not counting as parameter to be sent in payload. It will go in Header
+            if (codes[i] == 51) { validCount--; } 
+            if (codes[i] == 54) { validCount--; } 
+        }
+    }
+
     // ------------------------------------------------------------------------------------------------------
     // Build Lorawan packet
     // ------------------------------------------------------------------------------------------------------
