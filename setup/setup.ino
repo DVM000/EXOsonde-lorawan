@@ -40,7 +40,9 @@ const int MAX_paramsPerPacket = (MAX_PAYLOAD_SIZE - METADATA_BYTES) / PARAM_BYTE
 // Default sample period (seconds), min = 60 sec, max = 7200 sec
 uint16_t TRANSMIT_PERIOD = 300;
 // Default adapter sample period (seconds), minimum = 15 sec, max = 3600 sec
-uint16_t ADAPTER_PERIOD = TRANSMIT_PERIOD / 2; 
+uint16_t ADAPTER_PERIOD = TRANSMIT_PERIOD / 2;
+// Force Sample flag
+volatile bool FORCE_SAMPLE = false;
 
 // Functions
 bool JoinNetwork(int maxRetries = 5, int retryDelay = 5000){
@@ -177,7 +179,7 @@ void HandleDownlinkCommand() {
             break;
         case 0x02: // Force Sample
             Serial.println("CMD: Force Sample triggered");
-            // TODO: Add logic to force a sample
+            FORCE_SAMPLE = true;
             break;
         case 0x03: // Force Wipe
             Serial.println("CMD: Force Wipe triggered");
@@ -194,19 +196,8 @@ void HandleDownlinkCommand() {
     }
 }
 
-int ReadSensorData(uint16_t transmit_period, uint16_t* codes, uint16_t* statuses, uint16_t* values, int numParams, uint16_t& sample_period)
+int ReadSensorData( uint16_t& sample_period, uint16_t* codes, uint16_t* statuses, uint16_t* values, int numParams)
 {
-    // ------------------------------------------------------------------------------------------------------
-    // Waiting for Read
-    // ------------------------------------------------------------------------------------------------------
-    transmit_period = constrain(transmit_period, 60, 7200); // safety
-    Serial.print("\n--- Waiting for "); Serial.print(transmit_period); Serial.println(" seconds ---");
-
-    for (int i = 1; i <= transmit_period; i++) // wait transmit_period seconds
-    {
-         delay(1000);
-         Serial.print(i);  Serial.print(" ");
-    }
 
     // ------------------------------------------------------------------------------------------------------
     // Read data
@@ -423,8 +414,32 @@ void loop() {
     uint16_t statuses[numParams];
     uint16_t values[2 * numParams];
     uint16_t sample_period;
+
+    // ------------------------------------------------------------------------------------------------------
+    // Waiting for Read
+    // ------------------------------------------------------------------------------------------------------
+    // Only wait if it's NOT a force sample
+    if (!FORCE_SAMPLE) {
+        TRANSMIT_PERIOD = constrain(TRANSMIT_PERIOD, 60, 7200); // safety
+        Serial.print("\n--- Waiting for "); Serial.print(TRANSMIT_PERIOD); Serial.println(" seconds ---");
     
-    int validCount = ReadSensorData(TRANSMIT_PERIOD, codes, statuses, values, numParams, sample_period);
+        for (int i = 1; i <= TRANSMIT_PERIOD; i++) // wait TRANSMIT_PERIOD seconds
+        {
+             delay(1000);
+             Serial.print(i);  Serial.print(" ");
+        }
+    } 
+    else {
+        Serial.println("\n--- Force Sample triggered ---");
+    }
+    
+    // ------------------------------------------------------------------------------------------------------
+    // Start transmission
+    // ------------------------------------------------------------------------------------------------------
+    int validCount = ReadSensorData(sample_period, codes, statuses, values, numParams);
     BuildAndSendLoRaPackets(sample_period, codes, statuses, values, numParams, validCount);
+
+    // Reset force sample flag
+    FORCE_SAMPLE = false;
 }
 
