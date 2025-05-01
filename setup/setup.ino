@@ -180,6 +180,12 @@ void HandleDownlinkCommand() {
         case 0x02: // Force Sample
             Serial.println("CMD: Force Sample triggered");
             FORCE_SAMPLE = true;
+            modbus.byteToRegister(0x03, 1, 2);
+            for (int i = 1; i < 15; i++) // wait 15 sec to allow the data to go into registers
+            {
+                 delay(1000);
+                 Serial.print(i);  Serial.print(" ");
+            }
             break;
         case 0x03: // Force Wipe
             Serial.println("CMD: Force Wipe triggered");
@@ -429,9 +435,6 @@ void loop() {
              Serial.print(i);  Serial.print(" ");
         }
     } 
-    else {
-        Serial.println("\n--- Force Sample triggered ---");
-    }
     
     // ------------------------------------------------------------------------------------------------------
     // Start transmission
