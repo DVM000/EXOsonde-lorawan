@@ -9,8 +9,14 @@
 #include "CRC.h"
 #include <MKRWAN.h>             // https://docs.arduino.cc/libraries/mkrwan/
 #include "arduino_secrets.h"    // containing SECRET_APP_EUI and SECRET_APP_KEY
+const bool DEBUG = false; // set to true to enable serial debugging
+const bool verbose = false; // set to true to enable verbose output
 
-bool verbose = false;    // shows extra debugging information
+// Debugging
+#define dbg_print(x)     if (DEBUG) Serial.print(x)
+#define dbg_println(x)   if (DEBUG) Serial.println(x)
+#define dbg_printhex(x)  if (DEBUG) Serial.print(x, HEX)
+#define dbg_printhexln(x) if (DEBUG) Serial.println(x, HEX)
 
 // Sonde device configuration
 uint8_t devID = 0x12;   // Sonde device ID
@@ -66,10 +72,10 @@ volatile bool FORCE_SAMPLE = false;
 // Functions
 bool JoinNetwork(int maxRetries = 5, int retryDelay = 5000){
     bool connected = false;
-    Serial.print("Module version is: ");
-    Serial.print(modem.version());
-    Serial.print(". device EUI is: ");
-    Serial.println(modem.deviceEUI());
+    dbg_print("Module version is: ");
+    dbg_print(modem.version());
+    dbg_print(". device EUI is: ");
+    dbg_println(modem.deviceEUI());
 
     // https://www.semtech.com/design-support/faq/faq-lorawan/
     modem.minPollInterval(60); // independent of this setting, the modem will not allow sending more than one message every 2 minutes
@@ -77,24 +83,24 @@ bool JoinNetwork(int maxRetries = 5, int retryDelay = 5000){
     modem.dataRate(0);         // Data Rate. 0: SF10 BW 125 kHz
     modem.setADR(true);        // (dinamically) Adaptive Data Rate
 
-    Serial.print("--- Joining via OTAA... (timeout: "); Serial.print(JOIN_TIMEOUT/1000); Serial.println(" sec) --- ");
+    dbg_print("--- Joining via OTAA... (timeout: "); dbg_print(JOIN_TIMEOUT/1000); dbg_println(" sec) --- ");
     for (int attempt = 1; attempt <= maxRetries; attempt++) {
         connected = modem.joinOTAA(appEui, appKey, JOIN_TIMEOUT);
         if (connected) {
             break;
         } else {
-            Serial.print("x ");   
+            dbg_print("x ");   
             if (attempt < maxRetries) 
                 delay(retryDelay * attempt);  // exponential backoff 
         }
     }
     if (!connected) {
-        Serial.println(" -> Join fail.");
+        dbg_println(" -> Join fail.");
         while (1) {}
         return false;
     }
 
-    Serial.println(" -> Join pass.");
+    dbg_println(" -> Join pass.");
     return true;
 }
 
@@ -102,7 +108,7 @@ bool SendPacket(uint8_t* payload, int numBytes, int maxRetries = 5, int retryDel
     bool success = false;
 
     if (payload == nullptr || numBytes <= 0) {
-        Serial.println("Empty or null payload, skipping send.");
+        dbg_println("Empty or null payload, skipping send.");
         return false;
     }
 
@@ -112,43 +118,43 @@ bool SendPacket(uint8_t* payload, int numBytes, int maxRetries = 5, int retryDel
         modem.write(payload, numBytes);
         int ok = modem.endPacket(true) > 0;  
         if (ok) {
-            Serial.println(" ->  Message sent correctly.");
+            dbg_println(" ->  Message sent correctly.");
             success = true;
             break;
         } else {
-            Serial.print("x ");    
+            dbg_print("x ");    
             if (attempt < maxRetries) 
                 delay(retryDelay * attempt);  // exponential backoff 
         }
     }
     if (!success){
-        Serial.print(" -> Error sending message after "); Serial.print(maxRetries); Serial.println(" attempts.");}
+        dbg_print(" -> Error sending message after "); dbg_print(maxRetries); dbg_println(" attempts.");}
     return success;
 }
 
 void printPayloadHex(uint8_t* payload, int numBytes) {
-    Serial.print("Payload (HEX): ");
+    dbg_print("Payload (HEX): ");
     for (int i = 0; i < numBytes; i++) {
-        if (payload[i] < 0x10) Serial.print("0"); // zero padding
-        Serial.print(payload[i], HEX);
-        Serial.print(" ");
+        if (payload[i] < 0x10) dbg_print("0"); // zero padding
+        dbg_printhex(payload[i]);
+        dbg_print(" ");
       }
-    Serial.println();
-    Serial.println("               [reserved (1) | version (1) | devId (1) | DATE (4) | TIME (4) | sample_period (2) / VALID PARAMETERS (6*n) | CRC (1)]");
+    dbg_println();
+    dbg_println("               [reserved (1) | version (1) | devId (1) | DATE (4) | TIME (4) | sample_period (2) / VALID PARAMETERS (6*n) | CRC (1)]");
 }
 
 void changeTransmitPeriod(uint16_t newPeriod) {
     if (newPeriod < 60) {
-        Serial.print("CMD: Ignored - Transmit period too low: ");
-        Serial.println(newPeriod);
+        dbg_print("CMD: Ignored - Transmit period too low: ");
+        dbg_println(newPeriod);
     } else if (newPeriod > 7200) {
-        Serial.print("CMD: Ignored - Transmit period too high: ");
-        Serial.println(newPeriod);
+        dbg_print("CMD: Ignored - Transmit period too high: ");
+        dbg_println(newPeriod);
     } else {
         TRANSMIT_PERIOD = constrain(newPeriod, 60, 7200); // safety
-        Serial.print("CMD: Transmit period set to ");
-        Serial.print(TRANSMIT_PERIOD);
-        Serial.println(" seconds");
+        dbg_print("CMD: Transmit period set to ");
+        dbg_print(TRANSMIT_PERIOD);
+        dbg_println(" seconds");
 
         // Set adapter sample period to half of send period
         ADAPTER_PERIOD = TRANSMIT_PERIOD / 2;
@@ -156,9 +162,9 @@ void changeTransmitPeriod(uint16_t newPeriod) {
         bool success = modbus.byteToRegister(0x03, SAMPLE_PERIOD_REGISTER, ADAPTER_PERIOD);
 
         if (success) {
-            Serial.print("Adapter sample period set to "); Serial.print(ADAPTER_PERIOD); Serial.println(" seconds");
+            dbg_print("Adapter sample period set to "); dbg_print(ADAPTER_PERIOD); dbg_println(" seconds");
         } else {
-            Serial.println("WARNING: Failed to write adapter sample period");
+            dbg_println("WARNING: Failed to write adapter sample period");
         }
     }
 }
@@ -175,11 +181,11 @@ void ForceSample() {
         // Wait for adapter to complete sampling (minimum 15 sec)
         for (int i = 1; i <= 15; i++) {
             delay(1000);
-            Serial.print(i); Serial.print(" ");
+            dbg_print(i); dbg_print(" ");
         }
         FORCE_SAMPLE = true;  // Skip wait in main loop
     } else {
-        Serial.println("CMD Error: Failed to send force sample command to adapter");
+        dbg_println("CMD Error: Failed to send force sample command to adapter");
     }
 }
 
@@ -192,9 +198,9 @@ void ForceWipe() {
 
     // Check if the command was sent successfully
     if (success) {
-        Serial.println("CMD: Force wipe command sent to adapter");
+        dbg_println("CMD: Force wipe command sent to adapter");
     } else {
-        Serial.println("CMD Error: Failed to send force wipe command to adapter");
+        dbg_println("CMD Error: Failed to send force wipe command to adapter");
     }
 }
 
@@ -210,16 +216,16 @@ void changeParamType(int Params, uint8_t rcv[]) {
 
     for (int i = 0; i < Params; i++) {
         uint8_t paramCode = rcv[i + 1];
-        Serial.print(paramCode); Serial.print(" ");
+        dbg_print(paramCode); dbg_print(" ");
 
         if (!isValidParameterCode(paramCode)) {
-            Serial.print("\nCMD Error: Invalid parameter code "); Serial.println(paramCode);
+            dbg_print("\nCMD Error: Invalid parameter code "); dbg_println(paramCode);
             writeSuccess = false;
             break;
         }
 
         if (!modbus.byteToRegister(0x03, MIN_PARAM_TYPE_REGISTER + i, paramCode)) {
-            Serial.print("\nCMD Error: Failed to write parameter code "); Serial.println(paramCode);
+            dbg_print("\nCMD Error: Failed to write parameter code "); dbg_println(paramCode);
             writeSuccess = false;
             break;
         }
@@ -227,15 +233,15 @@ void changeParamType(int Params, uint8_t rcv[]) {
 
     if (writeSuccess) {
         modbus.byteToRegister(0x03, MIN_PARAM_TYPE_REGISTER + Params, 0);  // Terminate with 0
-        Serial.println("\nCMD: Parameter types updated successfully.");
+        dbg_println("\nCMD: Parameter types updated successfully.");
     } else {
-        Serial.println("CMD: Failed to write parameter types.");
+        dbg_println("CMD: Failed to write parameter types.");
     }
 }
 
 void HandleDownlinkCommand() {
     if (!modem.available()) {
-        Serial.println("No downlink message received.");
+        dbg_println("No downlink message received.");
         return;
     }
 
@@ -246,16 +252,16 @@ void HandleDownlinkCommand() {
         rcv[len++] = (uint8_t)modem.read();
     }
 
-    Serial.print("Downlink [");
-    Serial.print(len);
-    Serial.print(" bytes]: ");
+    dbg_print("Downlink [");
+    dbg_print(len);
+    dbg_print(" bytes]: ");
     for (int i = 0; i < len; i++) {
-        Serial.print("0x");
-        if (rcv[i] < 0x10) Serial.print("0");
-        Serial.print(rcv[i], HEX);
-        Serial.print(" ");
+        dbg_print("0x");
+        if (rcv[i] < 0x10) dbg_print("0");
+        dbg_printhex(rcv[i]);
+        dbg_print(" ");
     }
-    Serial.println();
+    dbg_println();
 
     if (len == 0) return;
 
@@ -264,34 +270,34 @@ void HandleDownlinkCommand() {
     switch (command) {
         case 0x01: // Change LoRaWAN Transmit Period
             if (len >= 3) {
-                Serial.println("CMD: Change Lorawan Transmit Period triggered");
+                dbg_println("CMD: Change Lorawan Transmit Period triggered");
                 uint16_t newPeriod = rcv[1] | (rcv[2] << 8);
                 changeTransmitPeriod(newPeriod);
             } else {
-                Serial.println("CMD Error: Sample period payload too short");
+                dbg_println("CMD Error: Sample period payload too short");
             }
             break;
         case 0x02: // Force Sample
-            Serial.println("CMD: Force Sample triggered");
+            dbg_println("CMD: Force Sample triggered");
             ForceSample();
             break;
         case 0x03: // Force Wipe
-            Serial.println("CMD: Force Wipe triggered");
+            dbg_println("CMD: Force Wipe triggered");
             ForceWipe();
             break;
         case 0x04: // Change Parameter Types
             if (len < 2) {
-                Serial.println("CMD Error: No parameter types provided.");
+                dbg_println("CMD Error: No parameter types provided.");
                 break;
             } else {
-                Serial.print("CMD: Change Parameter Types triggered");
+                dbg_print("CMD: Change Parameter Types triggered");
                 const int Params = min(len - 1, MAX_PARAM_CODES);  // max 32 parameters
                 changeParamType(Params, rcv);
             }
             break;
         default:
-            Serial.print("CMD Error: Unknown command code 0x");
-            Serial.println(command, HEX);
+            dbg_print("CMD Error: Unknown command code 0x");
+            dbg_printhexln(command);
             break;
     }
 }
@@ -304,56 +310,56 @@ int ReadSensorData( uint16_t& sample_period, uint16_t* codes, uint16_t* statuses
     // ------------------------------------------------------------------------------------------------------
     // Read sample period register (register 0)
     sample_period = modbus.uint16FromRegister(0x03, SAMPLE_PERIOD_REGISTER);
-    Serial.println(" "); Serial.print("Sample period: "); Serial.println(sample_period);
+    dbg_println(" "); dbg_print("Sample period: "); dbg_println(sample_period);
 
     // Read 32 parameter codes (registers 128–159)
-    if (verbose) { Serial.println(" "); Serial.println("Codes:"); }
+    if (verbose) { dbg_println(" "); dbg_println("Codes:"); }
     for (int i = 0; i < numParams; i++) {
         codes[i] = modbus.uint16FromRegister(0x03, MIN_PARAM_TYPE_REGISTER + i); 
-        if (verbose) { Serial.print(codes[i]);  Serial.print(","); }    
+        if (verbose) { dbg_print(codes[i]);  dbg_print(","); }    
     }
 
     // Read 32 parameter statuses (registers 256–287). Valid parameters correspond only to codes[i]!=0
-    if (verbose) { Serial.println(" "); Serial.println("Statuses:"); }
+    if (verbose) { dbg_println(" "); dbg_println("Statuses:"); }
     for (int i = 0; i < numParams; i++) {
         if (codes[i] != 0) { // more efficient: only read valid parameters
             statuses[i] = modbus.uint16FromRegister(0x03, MIN_PARAM_STATUS_REGISTER + i);
         }
-        if (verbose) { Serial.print(statuses[i]);  Serial.print(","); }
+        if (verbose) { dbg_print(statuses[i]);  dbg_print(","); }
     }
 
     // Read 32 parameter values (registers 384–447. 64 registers, 2 per floating-point value, little endian)
-    if (verbose) { Serial.println(" "); Serial.println("Values:"); }
+    if (verbose) { dbg_println(" "); dbg_println("Values:"); }
     for (int i = 0; i < numParams; i++) {
         if (codes[i] != 0) { // more efficient: only read valid parameters
             values[2*i]   = modbus.uint16FromRegister(0x03, MIN_PARAM_VALUE_REGISTER + 2*i, bigEndian);
             values[2*i+1] = modbus.uint16FromRegister(0x03, MIN_PARAM_VALUE_REGISTER + 2*i+1, bigEndian);
-            if (verbose) {  Serial.print(values[2*i]); Serial.print(","); Serial.print(values[2*i+1]); Serial.print(","); }
+            if (verbose) {  dbg_print(values[2*i]); dbg_print(","); dbg_print(values[2*i+1]); dbg_print(","); }
         }
     }
     if (verbose) {
         for (int i = 0; i < 2*numParams; i++) {
-            Serial.print(values[i]); Serial.print(","); }
+            dbg_print(values[i]); dbg_print(","); }
     }
     
     // Print valid parameters (code != 0)
     int validCount = 1; // sample_period is 1st parameter
-    Serial.println("idx\tCode\tStatus\tRaw 16-bit register values");
+    dbg_println("idx\tCode\tStatus\tRaw 16-bit register values");
     for (int i = 0; i < numParams; i++) {
         if (codes[i] != 0) {
             validCount++;
-            Serial.print(i); Serial.print("\t");
-            Serial.print(codes[i]); Serial.print("\t");
-            Serial.print(statuses[i]); Serial.print("\t");
-            if (codes[i] == 51) { Serial.print("(DATE) ");  validCount--; } // not counting as parameter to be sent in payload. It will go in Header
-            if (codes[i] == 54) { Serial.print("(TIME) ");  validCount--; } 
-            Serial.print(values[2*i], HEX); Serial.print(" "); Serial.println(values[2*i+1], HEX); 
+            dbg_print(i); dbg_print("\t");
+            dbg_print(codes[i]); dbg_print("\t");
+            dbg_print(statuses[i]); dbg_print("\t");
+            if (codes[i] == 51) { dbg_print("(DATE) ");  validCount--; } // not counting as parameter to be sent in payload. It will go in Header
+            if (codes[i] == 54) { dbg_print("(TIME) ");  validCount--; } 
+            dbg_printhex(values[2*i]); dbg_print(" "); dbg_printhexln(values[2*i+1]); 
         }
     }
 
-    Serial.print("Number of valid parameters: "); Serial.println(validCount); 
-    //Serial.println(" + sample_period"); 
-    Serial.print("Bytes required for parameters: "); Serial.println(validCount*PARAM_BYTES);
+    dbg_print("Number of valid parameters: "); dbg_println(validCount); 
+    //dbg_println(" + sample_period"); 
+    dbg_print("Bytes required for parameters: "); dbg_println(validCount*PARAM_BYTES);
 
     return validCount;
 }
@@ -381,16 +387,16 @@ void BuildAndSendLoRaPackets(uint16_t sample_period, uint16_t* codes, uint16_t* 
         ------------------- CRC -------------------
         [N] -> CRC (1 Bytes)
     */
-    Serial.print("MAX_PAYLOAD: "); Serial.println(MAX_PAYLOAD_SIZE);  
+    dbg_print("MAX_PAYLOAD: "); dbg_println(MAX_PAYLOAD_SIZE);  
     if (MAX_PAYLOAD_SIZE < METADATA_BYTES+PARAM_BYTES) { // not enough MAX_PAYLOAD_SIZE even for 1 parameter
-        Serial.print("ERROR: Can not send any parameter with PAYLOAD_SIZE = "); Serial.println(MAX_PAYLOAD_SIZE);
+        dbg_print("ERROR: Can not send any parameter with PAYLOAD_SIZE = "); dbg_println(MAX_PAYLOAD_SIZE);
         return;
     }
 
     int totalPackets = ceil((float)(validCount) / MAX_paramsPerPacket);
     int paramsPerPacket = ceil((float)(validCount) / totalPackets);
-    Serial.print("Total packets: "); Serial.print(totalPackets);
-    Serial.print(", with parameters per packet: "); Serial.println(paramsPerPacket);
+    dbg_print("Total packets: "); dbg_print(totalPackets);
+    dbg_print(", with parameters per packet: "); dbg_println(paramsPerPacket);
 
     // Get date & time from registers
     uint16_t DATEl, DATEh, TIMEl, TIMEh;
@@ -421,7 +427,7 @@ void BuildAndSendLoRaPackets(uint16_t sample_period, uint16_t* codes, uint16_t* 
     int i = 0;  // Index for parameters
 
     for (int pkt = 0; pkt < totalPackets; pkt++) {
-        Serial.print("--- Packet #"); Serial.print(pkt+1); Serial.print(", with params: ");
+        dbg_print("--- Packet #"); dbg_print(pkt+1); dbg_print(", with params: ");
 
         uint8_t payload[MAX_PAYLOAD_SIZE];
         int index = 0;
@@ -435,7 +441,7 @@ void BuildAndSendLoRaPackets(uint16_t sample_period, uint16_t* codes, uint16_t* 
         payload[index++] = DATEl >> 8;        //         (8 more significant bits)
         payload[index++] = DATEh & 0xFF;      // 4- Date (8 less significant bits of 2nd uint16)
         payload[index++] = DATEh >> 8;        //          (8 more significant bits)
-        if (verbose) { Serial.print(DATEl, HEX); Serial.print(" -> "); Serial.print(payload[3], HEX); Serial.print(" "); Serial.println(payload[4], HEX); }
+        if (verbose) { dbg_printhex(DATEl); dbg_print(" -> "); dbg_printhex(payload[3]); dbg_print(" "); dbg_printhexln(payload[4]); }
 
         payload[index++] = TIMEl & 0xFF;      // 5- Time
         payload[index++] = TIMEl >> 8;       
@@ -449,7 +455,7 @@ void BuildAndSendLoRaPackets(uint16_t sample_period, uint16_t* codes, uint16_t* 
             payload[index++] = sample_period & 0xFF; // 6- register 0 - sample_period 
             payload[index++] = sample_period >> 8; 
             remainingParams--;
-            Serial.print("0 (sample_period), ");
+            dbg_print("0 (sample_period), ");
         }
 
         if (index + 4 >= MAX_PAYLOAD_SIZE) continue; // avoid overload
@@ -461,12 +467,12 @@ void BuildAndSendLoRaPackets(uint16_t sample_period, uint16_t* codes, uint16_t* 
 
                 payload[index++] = values[2 * i] & 0xFF;   // 7c - parameter values (4 bytes). Values for parameter codes[i] are stored in values[2*i] and values[2*i+1]
                 payload[index++] = values[2 * i] >> 8;
-                //Serial.print(values[2*i], HEX); Serial.print(" -> "); Serial.print(payload[index-1], HEX); Serial.print(" "); Serial.println(payload[index-2], HEX);
+                //dbg_printhex(values[2*i]); dbg_print(" -> "); dbg_printhex(payload[index-1]); dbg_print(" "); dbg_printhexln(payload[index-2]);
                 payload[index++] = values[2 * i + 1] & 0xFF;
                 payload[index++] = values[2 * i + 1] >> 8;
-                //Serial.print(values[2*i+1], HEX); Serial.print(" -> "); Serial.print(payload[index-1], HEX); Serial.print(" "); Serial.println(payload[index-2], HEX); 
+                //dbg_printhex(values[2*i+1]); dbg_print(" -> "); dbg_printhex(payload[index-1]); dbg_print(" "); dbg_printhexln(payload[index-2]); 
                 remainingParams--;
-                Serial.print(i); Serial.print(": "); Serial.print(codes[i]); Serial.print(", ");
+                dbg_print(i); dbg_print(": "); dbg_print(codes[i]); dbg_print(", ");
             }
             i++;
         }
@@ -478,33 +484,35 @@ void BuildAndSendLoRaPackets(uint16_t sample_period, uint16_t* codes, uint16_t* 
         payload[index++] = crc_value;  // 8- CRC
 
         // --- SEND ---
-        Serial.print(". Payload: "); Serial.println(index);
+        dbg_print(". Payload: "); dbg_println(index);
         if (true) { printPayloadHex(payload, index);  }
-        Serial.println("--- Sending packet... --- ");
+        dbg_println("--- Sending packet... --- ");
         SendPacket(payload, index);
-        Serial.println();
+        dbg_println();
     }
     HandleDownlinkCommand();  // Check if any downlink is received
 }
 
 void setup() {
 
-    Serial.begin(serialBaud);            // serial bus communication with laptop
-    while (!Serial);                     // wait until port is ready on MKR board
+    if (DEBUG) {
+        Serial.begin(serialBaud);            // serial bus communication with laptop
+        while (!Serial);                     // wait until port is ready on MKR board
+    }
 
     modbusSerial.begin(modbusBaudRate);  // modbus communication with Sonde device
     modbus.begin(modbusAddress, modbusSerial, 6);
 
     // Set Adapter samples
     modbus.byteToRegister(0x03, SAMPLE_PERIOD_REGISTER, ADAPTER_PERIOD);  
-    Serial.println("Set adapter sample period");
+    dbg_println("Set adapter sample period");
 
-    //Serial.println("Starting LoRa modem...");
+    //dbg_println("Starting LoRa modem...");
     if (!modem.begin(US915)) { // US915: (902–928 MHz)
-        Serial.println("Failed to start modem module");
+        dbg_println("Failed to start modem module");
         while (1) {}
     }
-    Serial.print("Modem started successfully. ");
+    dbg_print("Modem started successfully. ");
     JoinNetwork();
 }
 
@@ -520,12 +528,12 @@ void loop() {
     // Only wait if it's NOT a force sample
     if (!FORCE_SAMPLE) {
         TRANSMIT_PERIOD = constrain(TRANSMIT_PERIOD, 60, 7200); // safety
-        Serial.print("\n--- Waiting for "); Serial.print(TRANSMIT_PERIOD); Serial.println(" seconds ---");
+        dbg_print("\n--- Waiting for "); dbg_print(TRANSMIT_PERIOD); dbg_println(" seconds ---");
     
         for (int i = 1; i <= TRANSMIT_PERIOD; i++) // wait TRANSMIT_PERIOD seconds
         {
              delay(1000);
-             Serial.print(i);  Serial.print(" ");
+             dbg_print(i);  dbg_print(" ");
         }
     } 
     
