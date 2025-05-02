@@ -46,18 +46,32 @@ Install via the [Arduino IDE](https://www.arduino.cc/en/software/) Library Manag
 
 ---
 
-## Configuration
+## Installing Software
 
-Device ID, HW/SW version and MAX_PAYLOAD_SIZE required (in `main.ino`).
+1. To connect to the `MKR WAN 1310` board, you will need to install the [Arduino IDE](https://support.arduino.cc/hc/en-us/articles/360019833020-Download-and-install-Arduino-IDE)
+1. Once you installed the IDE, you need to further install the board's software support by following the [SAMD21 core for MKR boards Documentation](https://docs.arduino.cc/software/ide-v1/tutorials/getting-started/cores/arduino-samd)
 
-LoRaWAN credentials required (in `arduino_secrets.h`):
+   <img src='./images/software_download.jpeg' alt='software download' height='200'>
+1. You will also need the library for mkrwan. Under Library Manager, look up "mkrwan" and install `MKRWAN by Arduino`.
 
-```cpp
-#define SECRET_APP_EUI "xxxxxxxxxxxxxxxx"
-#define SECRET_APP_KEY "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-```
+   <img src='./images/mkrwan_lib_download.jpeg' alt='mkrwan library download' height='400'>
+    
+    >NOTE: At the time of configuring the board `MKRWAN_v2` was not used because of bug issues related to the library.
+
+1. Install the additional libraries listed in [Arduino Libraries](#arduino-libraries)
 
 ---
+
+## Configuration
+
+1. Device ID, HW/SW version and MAX_PAYLOAD_SIZE required (in `main.ino`).
+
+1. LoRaWAN credentials required (in `arduino_secrets.h`):
+
+```cpp
+#define SECRET_APP_KEY "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+```
+>NOTE: If you are using Chirpstack you can follow their documentation on how to add devices and generate the app key: https://www.chirpstack.io/docs/guides/connect-device.html
 
 ## Serial Output Example
 
