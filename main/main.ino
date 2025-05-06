@@ -171,9 +171,9 @@ void changeTransmitPeriod(uint16_t newPeriod) {
 
 void ForceSample() {
     // Send force sample command to adapter with one retry attempt
-    bool success = modbus.byteToRegister(0x03, FORCE_SAMPLE_REGISTER, 2);
+    bool success = modbus.byteToRegister(FORCE_SAMPLE_REGISTER,0x03, 2);
     if (!success) {
-        success = modbus.byteToRegister(0x03, FORCE_SAMPLE_REGISTER, 2);
+        success = modbus.byteToRegister(FORCE_SAMPLE_REGISTER,0x03, 2);
     }
 
     // Check if the command was sent successfully
@@ -191,9 +191,9 @@ void ForceSample() {
 
 void ForceWipe() {
     // Send force wipe command to adapter with one retry attempt
-    bool success = modbus.byteToRegister(0x03, FORCE_WIPE_REGISTER, 2);
+    bool success = modbus.byteToRegister(FORCE_WIPE_REGISTER,0x03, 2);
     if (!success) {
-        success = modbus.byteToRegister(0x03, FORCE_WIPE_REGISTER, 2);
+        success = modbus.byteToRegister(FORCE_WIPE_REGISTER,0x03, 2);
     }
 
     // Check if the command was sent successfully
