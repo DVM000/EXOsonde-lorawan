@@ -20,7 +20,7 @@ const bool verbose = false; // set to true to enable verbose output
 
 // Sonde device configuration
 uint8_t devID = 0x12;   // Sonde device ID
-uint8_t version = 0x00; // Sonde Hardware/Software version, TODO: remember to up the version to match the github version
+uint8_t version = 0x02; // Sonde Hardware/Software version
 
 // Bus configuration
 byte modbusAddress = 0x01;
