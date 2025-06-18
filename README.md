@@ -110,6 +110,16 @@ The LoRaWAN payload will be divided into multiple packets, each conforming to th
 [N]   -> CRC8 byte
 ```
 
+## Heartbeat Measurement
+
+A heartbeat signal will always be transmitted and **cannot be disabled**, even when no data is being collected from the EXO Sonde. This signal is a 1-byte value that starts at 1 and increments to 255, then wraps back to 1. The heartbeat is a custom parameter specifically designed to monitor the EXO Sonde to LoRaWAN Bridge. It is not part of Xylem’s official EXO Sonde documentation.
+
+| Parameter | Code |
+| --------- | ---- |
+| Heartbeat | 255  |
+
+> **Note:** If the heartbeat resets to 1 before reaching 255, this indicates that the MKR WAN 1310 has been restarted.
+
 ### Downlink Command Structure
 
 The device supports several LoRaWAN downlink commands for remote configuration and control. Downlink messages follow a simple command-based structure, where the **first byte indicates the command type**, and the **subsequent bytes contain any associated parameters**.
