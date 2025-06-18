@@ -155,7 +155,11 @@ class Decoder: # This class is used to decode the data received from the sensor
                 status = 0
                 value_bytes = payload[index:index+2]; index += 2
                 value = int.from_bytes(value_bytes, byteorder='little')
-                name = 'Sampling period'
+                name = 'Sampling period, sec'
+            elif code == 255:
+                status = 0
+                value = payload[index]; index += 1
+                name = 'heartbeat'
             else:
                 status = payload[index]; index += 1
                 value_bytes = payload[index:index+4]; index += 4

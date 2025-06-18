@@ -20,7 +20,7 @@ const bool verbose = false; // set to true to enable verbose output
 
 // Sonde device configuration
 uint8_t devID = 0x12;   // Sonde device ID
-uint8_t version = 0x00; // Sonde Hardware/Software version
+uint8_t version = 0x02; // Sonde Hardware/Software version
 
 // Bus configuration
 byte modbusAddress = 0x01;
@@ -68,6 +68,10 @@ uint16_t TRANSMIT_PERIOD = 300;
 uint16_t ADAPTER_PERIOD = TRANSMIT_PERIOD / 2;
 // Force Sample flag
 volatile bool FORCE_SAMPLE = false;
+
+// Heartbeat parameter (always send, increments 1…255 then wraps to 1)
+uint8_t heartbeatCounter = 1;
+const int HEARTBEAT_PARAM_CODE = 255;
 
 // Functions
 bool JoinNetwork(int maxRetries = 5, int retryDelay = 5000){
@@ -364,6 +368,61 @@ int ReadSensorData( uint16_t& sample_period, uint16_t* codes, uint16_t* statuses
     return validCount;
 }
 
+void heartbeat(uint16_t DATEl, uint16_t DATEh, uint16_t TIMEl, uint16_t TIMEh) {
+    // ------------------------------------------------------------------------------------------------------
+    // Build and send heartbeat packet
+    // ------------------------------------------------------------------------------------------------------
+    /*
+        ------------------- HEADER -------------------
+        [0]   -> reserved Byte (1 Byte)
+        [1]   -> HW/SW version (1 byte)
+        [2]   -> Device ID (1 Byte)
+        [3-6] -> Date (4 Bytes)         // Register 51
+            [3-4] -> 1st uint16_t register -> bytes: [low, high]
+            [5-6] -> 2nd uint16_t register -> bytes: [low, high]
+        [7-10] -> Time (4 Bytes)        // Register 54
+        ------------------- PAYLOAD -------------------
+        [11]  -> Heartbeat parameter code (1 Byte)
+        [13] -> Heartbeat value (1 Byte)
+        ------------------- CRC -------------------
+        [N] -> CRC (1 Bytes)
+    */
+    uint8_t payload[MAX_PAYLOAD_SIZE];
+    int index = 0;
+
+    // --- HEADER ---
+    payload[index++] = 0x00;           // reserved
+    payload[index++] = version;        // HW/SW version
+    payload[index++] = devID;          // device ID
+
+    payload[index++] = DATEl & 0xFF;   // 4- Date (8 less significant bits of 1st uint16)
+    payload[index++] = DATEl >> 8;     //         (8 more significant bits)
+    payload[index++] = DATEh & 0xFF;   // 4- Date (8 less significant bits of 2nd uint16)
+    payload[index++] = DATEh >> 8;     //          (8 more significant bits)
+
+    payload[index++] = TIMEl & 0xFF;   // 5- Time
+    payload[index++] = TIMEl >> 8;       
+    payload[index++] = TIMEh & 0xFF;   // 5- Time (8 less significant bits of 2nd uint16)
+    payload[index++] = TIMEh >> 8;
+
+    // --- HEARTBEAT PARAM (2 bytes) ---
+    payload[index++] = HEARTBEAT_PARAM_CODE;  // code
+    payload[index++] = heartbeatCounter;      // value
+    if (++heartbeatCounter == 0) heartbeatCounter = 1; // roll over 1…255
+
+    // --- CRC ---
+    CRC8 crc;
+    crc.add((uint8_t*) payload, index);
+    payload[index++] = crc.calc();
+
+    // --- SEND ---
+    dbg_println("Heartbeat Payload:");
+    if (true) { printPayloadHex(payload, index);  }
+    dbg_println("--- Sending packet... --- ");
+    SendPacket(payload, index);
+    dbg_println();
+}
+
 void BuildAndSendLoRaPackets(uint16_t sample_period, uint16_t* codes, uint16_t* statuses, uint16_t* values, int numParams, int validCount) {
     // ------------------------------------------------------------------------------------------------------
     // Build Lorawan packet
@@ -490,6 +549,7 @@ void BuildAndSendLoRaPackets(uint16_t sample_period, uint16_t* codes, uint16_t* 
         SendPacket(payload, index);
         dbg_println();
     }
+    heartbeat(DATEl, DATEh, TIMEl, TIMEh); //send the heartbeat packet
     HandleDownlinkCommand();  // Check if any downlink is received
 }
 
@@ -541,6 +601,10 @@ void loop() {
     // Start transmission
     // ------------------------------------------------------------------------------------------------------
     int validCount = ReadSensorData(sample_period, codes, statuses, values, MAX_PARAM_CODES);
+    if (validCount <= 0) {
+        dbg_println("ReadSensorData retured no data — proceeding with heartbeat only");
+        validCount = 0;
+    }
     BuildAndSendLoRaPackets(sample_period, codes, statuses, values, MAX_PARAM_CODES, validCount);
 
     // Reset force sample flag
