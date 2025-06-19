@@ -53,7 +53,7 @@ const uint8_t VALID_PARAM_CODES[] = {
 LoRaModem modem;
 String appEui = SECRET_APP_EUI; // OTAA credentials
 String appKey = SECRET_APP_KEY;
-const int JOIN_TIMEOUT = 60000; // max waiting time for joining
+const int JOIN_TIMEOUT = 240000; // max waiting time for joining
 
 // LoRaWAN packet variables
 const int METADATA_BYTES = 1 + 1 + 1 + 8 + 1;  // Reserved + version + deviceID + Date+Time (8B) + CRC
