@@ -10,16 +10,25 @@
 #include <MKRWAN.h>             // https://docs.arduino.cc/libraries/mkrwan/
 #include <Adafruit_SleepyDog.h> //https://docs.arduino.cc/libraries/adafruit-sleepydog-library/
 #include "arduino_secrets.h"    // containing SECRET_APP_EUI and SECRET_APP_KEY
+
+/* -------------------------------------------------------------------------------------
+DEBUGGING 
+    * DEBUG: set to true to enable serial debugging
+    * verbose: set to true to enable verbose output
+    
+    NOTE: if enabled, the mkrwan will not work if the end device does not except the 
+        serial port
+---------------------------------------------------------------------------------------*/
 const bool DEBUG = false; // set to true to enable serial debugging
 const bool verbose = false; // set to true to enable verbose output
-
-// Debugging
 #define dbg_print(x)     if (DEBUG) Serial.print(x)
 #define dbg_println(x)   if (DEBUG) Serial.println(x)
 #define dbg_printhex(x)  if (DEBUG) Serial.print(x, HEX)
 #define dbg_printhexln(x) if (DEBUG) Serial.println(x, HEX)
 
-// Sonde device configuration
+/* -------------------------------------------------------------------------------------
+EXOSONDE DEVICE GLOBAL VARIABLES
+---------------------------------------------------------------------------------------*/
 uint8_t devID = 0x12;   // Sonde device ID
 uint8_t version = 0x02; // Sonde Hardware/Software version
 
@@ -50,7 +59,9 @@ const uint8_t VALID_PARAM_CODES[] = {
     230, 237, 238, 239, 240, 241, 242, 243
 };
 
-// LoRaWAN variables
+/* -------------------------------------------------------------------------------------
+LORAWAN GLOBAL VARIABLES
+---------------------------------------------------------------------------------------*/
 LoRaModem modem;
 String appEui = SECRET_APP_EUI; // OTAA credentials
 String appKey = SECRET_APP_KEY;
@@ -74,18 +85,20 @@ volatile bool FORCE_SAMPLE = false;
 uint8_t heartbeatCounter = 1;
 const int HEARTBEAT_PARAM_CODE = 255;
 
-// WATCHDOG VARIABLES
-// -------------------------------------------------------------------------------------
+/* -------------------------------------------------------------------------------------
+WATCHDOG GLOBAL VARIABLES
+---------------------------------------------------------------------------------------*/
 // 5 seconds buffer for watchdog timer to prevent rebooting during transmission
 const int WATCHDOG_BUFFER = 5000;
 
-// FUNCTIONS
-// -------------------------------------------------------------------------------------
+/* -------------------------------------------------------------------------------------
+WATCHDOG FUNCTIONS
+---------------------------------------------------------------------------------------*/
 void enableWatchdog() {
-    // ------------------------------------------------------------------------------------------------------
-    //  Enable the watchdog timer, this will reboot the system if it is not reset in time
-    // ------------------------------------------------------------------------------------------------------
-    timeout = max(TRANSMIT_PERIOD * 1000, JOIN_TIMEOUT) + WATCHDOG_BUFFER;
+    /*-------------------------------------------------------------------------------------------------------
+    Enable the watchdog timer, this will reboot the system if it is not reset in time
+    -------------------------------------------------------------------------------------------------------*/
+    int timeout = max(TRANSMIT_PERIOD * 1000, JOIN_TIMEOUT) + WATCHDOG_BUFFER;
     int countdownMS = Watchdog.enable(timeout);
     dbg_print("[WDT] Watchdog enabled with timeout: ");
     dbg_print(countdownMS / 1000); // print in seconds
@@ -93,9 +106,9 @@ void enableWatchdog() {
 }
 
 void resetWatchdog(const char* tag = "") {
-    // ------------------------------------------------------------------------------------------------------
-    //  Reset the watchdog timer, this pings the watchdog to prevent a system reboot
-    // ------------------------------------------------------------------------------------------------------
+    /*------------------------------------------------------------------------------------------------------
+    Reset the watchdog timer, this pings the watchdog to prevent a system reboot
+    -------------------------------------------------------------------------------------------------------*/
     Watchdog.reset();
     dbg_print("[WDT] Watchdog ping");
     if (strlen(tag) > 0) {
@@ -106,111 +119,32 @@ void resetWatchdog(const char* tag = "") {
 }
 
 void updateWatchdogTimeout() {
-    // ------------------------------------------------------------------------------------------------------
-    //  Update the watchdog timeout based on the current TRANSMIT_PERIOD and JOIN_TIMEOUT
-    // ------------------------------------------------------------------------------------------------------
+    /* ------------------------------------------------------------------------------------------------------
+    Update the watchdog timeout based on the current TRANSMIT_PERIOD and JOIN_TIMEOUT
+    --------------------------------------------------------------------------------------------------------*/
+    dbg_println("[WDT] Updating watchdog timeout...");
     Watchdog.disable();              
     delay(100);                      
     enableWatchdog();  
 }
 
-bool JoinNetwork(int maxRetries = 5, int retryDelay = 5000){
-    // ------------------------------------------------------------------------------------------------------
-    //  Join the LoRaWAN network using OTAA (Over-The-Air Activation)
-    //  maxRetries: maximum number of join attempts, minimum is 1 , maximum is 5
-    //  retryDelay: delay between join attempts in milliseconds, minimum is 5000, maximum is 10000
-    //  Note: The modem must be initialized before calling this function.
-    //  If the join fails, the function will block indefinitely waiting for a reboot.
-    // ------------------------------------------------------------------------------------------------------
-    resetWatchdog("JoinNetwork() start");
-    retryDelay = constrain(retryDelay, 5000, 10000); // safety: 5-10 seconds
-    maxRetries = constrain(maxRetries, 1, 5); // safety: 1-5 retries
-    bool connected = false;
-    dbg_print("Module version is: ");
-    dbg_print(modem.version());
-    dbg_print(". device EUI is: ");
-    dbg_println(modem.deviceEUI());
-
-    // https://www.semtech.com/design-support/faq/faq-lorawan/
-    modem.minPollInterval(60); // independent of this setting, the modem will not allow sending more than one message every 2 minutes
-    modem.setPort(10);         // Application-specific Fport
-    modem.dataRate(0);         // Data Rate. 0: SF10 BW 125 kHz
-    modem.setADR(true);        // (dinamically) Adaptive Data Rate
-
-    dbg_print("--- Joining via OTAA... (timeout: "); dbg_print(JOIN_TIMEOUT/1000); dbg_println(" sec) --- ");
-    for (int attempt = 1; attempt <= maxRetries; attempt++) {
-        resetWatchdog("JoinNetwork() Join attempt");
-        connected = modem.joinOTAA(appEui, appKey, JOIN_TIMEOUT);
-        if (connected) {
-            break;
-        } else {
-            dbg_print("x ");   
-            if (attempt < maxRetries) { 
-                resetWatchdog("JoinNetwork() retry delay");
-                delay(retryDelay * attempt);  // exponential backoff
-            } 
-        }
-    }
-    if (!connected) {
-        dbg_println(" -> Join fail.");
-        dbg_println("waiting for a system reboot...");
-        while (1) {} //infinite loop to wait for a reboot
-        return false;
-    }
-
-    dbg_println(" -> Join pass.");
-    return true;
-}
-
-bool SendPacket(uint8_t* payload, int numBytes, int maxRetries = 5, int retryDelay = 5000) {
-    bool success = false;
-
-    if (payload == nullptr || numBytes <= 0) {
-        dbg_println("Empty or null payload, skipping send.");
-        return false;
-    }
-
-    for (int attempt = 1; attempt <= maxRetries; attempt++) {
-        modem.dataRate(1);         // Data Rate. 0: SF10 BW 125 kHz
-        modem.beginPacket();
-        modem.write(payload, numBytes);
-        int ok = modem.endPacket(true) > 0;  
-        if (ok) {
-            dbg_println(" ->  Message sent correctly.");
-            success = true;
-            break;
-        } else {
-            dbg_print("x ");    
-            if (attempt < maxRetries) 
-                delay(retryDelay * attempt);  // exponential backoff 
-        }
-    }
-    if (!success){
-        dbg_print(" -> Error sending message after "); dbg_print(maxRetries); dbg_println(" attempts.");}
-    return success;
-}
-
-void printPayloadHex(uint8_t* payload, int numBytes) {
-    dbg_print("Payload (HEX): ");
-    for (int i = 0; i < numBytes; i++) {
-        if (payload[i] < 0x10) dbg_print("0"); // zero padding
-        dbg_printhex(payload[i]);
-        dbg_print(" ");
-      }
-    dbg_println();
-    dbg_println("               [reserved (1) | version (1) | devId (1) | DATE (4) | TIME (4) | sample_period (2) / VALID PARAMETERS (6*n) | CRC (1)]");
-}
-
+/* -------------------------------------------------------------------------------------
+EXOSONDE FUNCTIONS
+---------------------------------------------------------------------------------------*/
 void changeTransmitPeriod(uint16_t newPeriod) {
+    /* ------------------------------------------------------------------------------------------------------
+    Change the LoRaWAN transmit period and update the adapter sample period accordingly
+    newPeriod: new transmit period in seconds, must be between 60 and 7200 seconds
+    --------------------------------------------------------------------------------------------------------*/
     if (newPeriod < 60) {
-        dbg_print("CMD: Ignored - Transmit period too low: "); //TODO: change "CMD:"" to "[CMD]" in all places
+        dbg_print("[CMD] Ignored - Transmit period too low: ");
         dbg_println(newPeriod);
     } else if (newPeriod > 7200) {
-        dbg_print("CMD: Ignored - Transmit period too high: ");
+        dbg_print("[CMD] Ignored - Transmit period too high: ");
         dbg_println(newPeriod);
     } else {
         TRANSMIT_PERIOD = constrain(newPeriod, 60, 7200); // safety
-        dbg_print("CMD: Transmit period set to ");
+        dbg_print("[CMD] Transmit period set to ");
         dbg_print(TRANSMIT_PERIOD);
         dbg_println(" seconds");
 
@@ -231,6 +165,10 @@ void changeTransmitPeriod(uint16_t newPeriod) {
 }
 
 void ForceSample() {
+    /* ------------------------------------------------------------------------------------------------------
+    Force a sample on the adapter by sending a command to it
+    It will wait for the adapter to complete sampling, which takes at least 15 seconds.
+    --------------------------------------------------------------------------------------------------------*/
     // Send force sample command to adapter with one retry attempt
     bool success = modbus.byteToRegister(FORCE_SAMPLE_REGISTER,0x03, 2);
     if (!success) {
@@ -247,11 +185,15 @@ void ForceSample() {
         }
         FORCE_SAMPLE = true;  // Skip wait in main loop
     } else {
-        dbg_println("CMD Error: Failed to send force sample command to adapter");
+        dbg_println("[CMD] Error: Failed to send force sample command to adapter");
     }
 }
 
 void ForceWipe() {
+    /* ------------------------------------------------------------------------------------------------------
+    Force a wipe on the adapter by sending a command to it
+    This command is used to reset the adapter and clear its memory.
+    --------------------------------------------------------------------------------------------------------*/
     // Send force wipe command to adapter with one retry attempt
     bool success = modbus.byteToRegister(FORCE_WIPE_REGISTER,0x03, 2);
     if (!success) {
@@ -260,13 +202,18 @@ void ForceWipe() {
 
     // Check if the command was sent successfully
     if (success) {
-        dbg_println("CMD: Force wipe command sent to adapter");
+        dbg_println("[CMD] Force wipe command sent to adapter");
     } else {
-        dbg_println("CMD Error: Failed to send force wipe command to adapter");
+        dbg_println("[CMD] Error: Failed to send force wipe command to adapter");
     }
 }
 
 bool isValidParameterCode(uint8_t code) {
+    /* ------------------------------------------------------------------------------------------------------
+    Check if the given parameter code is valid
+    code: parameter code to check
+    Returns: true if the code is valid, false otherwise
+    --------------------------------------------------------------------------------------------------------*/
     for (uint8_t valid : VALID_PARAM_CODES) {
         if (code == valid) return true;
     }
@@ -274,6 +221,11 @@ bool isValidParameterCode(uint8_t code) {
 }
 
 void changeParamType(int Params, uint8_t rcv[]) {
+    /* ------------------------------------------------------------------------------------------------------
+    Change the parameter types in the adapter by writing to the Modbus registers
+    Params: number of parameters to change
+    rcv: array containing the parameter codes to write, first byte is the command code
+    --------------------------------------------------------------------------------------------------------*/
     bool writeSuccess = true;
 
     for (int i = 0; i < Params; i++) {
@@ -281,13 +233,13 @@ void changeParamType(int Params, uint8_t rcv[]) {
         dbg_print(paramCode); dbg_print(" ");
 
         if (!isValidParameterCode(paramCode)) {
-            dbg_print("\nCMD Error: Invalid parameter code "); dbg_println(paramCode);
+            dbg_print("\n[CMD] Error: Invalid parameter code "); dbg_println(paramCode);
             writeSuccess = false;
             break;
         }
 
         if (!modbus.byteToRegister(0x03, MIN_PARAM_TYPE_REGISTER + i, paramCode)) {
-            dbg_print("\nCMD Error: Failed to write parameter code "); dbg_println(paramCode);
+            dbg_print("\n[CMD] Error: Failed to write parameter code "); dbg_println(paramCode);
             writeSuccess = false;
             break;
         }
@@ -295,81 +247,24 @@ void changeParamType(int Params, uint8_t rcv[]) {
 
     if (writeSuccess) {
         modbus.byteToRegister(0x03, MIN_PARAM_TYPE_REGISTER + Params, 0);  // Terminate with 0
-        dbg_println("\nCMD: Parameter types updated successfully.");
+        dbg_println("\n[CMD] Parameter types updated successfully.");
     } else {
-        dbg_println("CMD: Failed to write parameter types.");
-    }
-}
-
-void HandleDownlinkCommand() {
-    if (!modem.available()) {
-        dbg_println("No downlink message received.");
-        return;
-    }
-
-    uint8_t rcv[64];  // adjust size based on max expected command length
-    int len = 0;
-
-    while (modem.available()) {
-        rcv[len++] = (uint8_t)modem.read();
-    }
-
-    dbg_print("Downlink [");
-    dbg_print(len);
-    dbg_print(" bytes]: ");
-    for (int i = 0; i < len; i++) {
-        dbg_print("0x");
-        if (rcv[i] < 0x10) dbg_print("0");
-        dbg_printhex(rcv[i]);
-        dbg_print(" ");
-    }
-    dbg_println();
-
-    if (len == 0) return;
-
-    uint8_t command = rcv[0];
-
-    switch (command) {
-        case 0x01: // Change LoRaWAN Transmit Period
-            if (len >= 3) {
-                dbg_println("CMD: Change Lorawan Transmit Period triggered");
-                uint16_t newPeriod = rcv[1] | (rcv[2] << 8);
-                changeTransmitPeriod(newPeriod);
-            } else {
-                dbg_println("CMD Error: Sample period payload too short");
-            }
-            break;
-        case 0x02: // Force Sample
-            dbg_println("CMD: Force Sample triggered");
-            ForceSample();
-            break;
-        case 0x03: // Force Wipe
-            dbg_println("CMD: Force Wipe triggered");
-            ForceWipe();
-            break;
-        case 0x04: // Change Parameter Types
-            if (len < 2) {
-                dbg_println("CMD Error: No parameter types provided.");
-                break;
-            } else {
-                dbg_print("CMD: Change Parameter Types triggered");
-                const int Params = min(len - 1, MAX_PARAM_CODES);  // max 32 parameters
-                changeParamType(Params, rcv);
-            }
-            break;
-        default:
-            dbg_print("CMD Error: Unknown command code 0x");
-            dbg_printhexln(command);
-            break;
+        dbg_println("[CMD] Failed to write parameter types.");
     }
 }
 
 int ReadSensorData( uint16_t& sample_period, uint16_t* codes, uint16_t* statuses, uint16_t* values, int numParams)
 {
+    /* ------------------------------------------------------------------------------------------------------
+    Read sensor data from the EXO sonde via Modbus
+    sample_period: reference to store the sample period value
+    codes: array to store parameter codes
+    statuses: array to store parameter statuses
+    values: array to store parameter values (2 registers per value)
+    numParams: number of parameters to read (maximum is MAX_PARAM_CODES)
+    Returns: number of valid parameters read
+    --------------------------------------------------------------------------------------------------------*/
 
-    // ------------------------------------------------------------------------------------------------------
-    // Read data
-    // ------------------------------------------------------------------------------------------------------
     // Read sample period register (register 0)
     sample_period = modbus.uint16FromRegister(0x03, SAMPLE_PERIOD_REGISTER);
     dbg_println(" "); dbg_print("Sample period: "); dbg_println(sample_period);
@@ -426,25 +321,129 @@ int ReadSensorData( uint16_t& sample_period, uint16_t* codes, uint16_t* statuses
     return validCount;
 }
 
+/* -------------------------------------------------------------------------------------
+LoRaWAN FUNCTIONS
+---------------------------------------------------------------------------------------*/
+bool JoinNetwork(int maxRetries = 5, int retryDelay = 5000){
+    /* ------------------------------------------------------------------------------------------------------
+    Join the LoRaWAN network using OTAA (Over-The-Air Activation)
+    maxRetries: maximum number of join attempts, minimum is 1 , maximum is 5
+    retryDelay: delay between join attempts in milliseconds, minimum is 5000, maximum is 10000
+    Note: The modem must be initialized before calling this function.
+    If the join fails, the function will block indefinitely waiting for a reboot.
+    --------------------------------------------------------------------------------------------------------*/
+    resetWatchdog("JoinNetwork() start");
+    retryDelay = constrain(retryDelay, 5000, 10000); // safety: 5-10 seconds
+    maxRetries = constrain(maxRetries, 1, 5); // safety: 1-5 retries
+    bool connected = false;
+    dbg_print("[LORA] Module version is: ");
+    dbg_print(modem.version());
+    dbg_print(". device EUI is: ");
+    dbg_println(modem.deviceEUI());
+
+    // https://www.semtech.com/design-support/faq/faq-lorawan/
+    modem.minPollInterval(60); // independent of this setting, the modem will not allow sending more than one message every 2 minutes
+    modem.setPort(10);         // Application-specific Fport
+    modem.dataRate(0);         // Data Rate. 0: SF10 BW 125 kHz
+    modem.setADR(true);        // (dinamically) Adaptive Data Rate
+
+    dbg_print("[LORA] --- Joining via OTAA... (timeout: "); dbg_print(JOIN_TIMEOUT/1000); dbg_println(" sec) --- ");
+    for (int attempt = 1; attempt <= maxRetries; attempt++) {
+        resetWatchdog("JoinNetwork() Join attempt");
+        connected = modem.joinOTAA(appEui, appKey, JOIN_TIMEOUT);
+        if (connected) {
+            break;
+        } else {
+            dbg_print("x ");   
+            if (attempt < maxRetries) { 
+                resetWatchdog("JoinNetwork() retry delay");
+                delay(retryDelay * attempt);  // exponential backoff
+            } 
+        }
+    }
+    if (!connected) {
+        dbg_println(" -> Join fail.");
+        dbg_println("waiting for a system reboot...");
+        while (1) {} //infinite loop to wait for a reboot
+        return false;
+    }
+
+    dbg_println(" -> Join pass.");
+    return true;
+}
+
+bool SendPacket(uint8_t* payload, int numBytes, int maxRetries = 5, int retryDelay = 5000) {
+    /* ------------------------------------------------------------------------------------------------------
+    Send a LoRaWAN packet with the given payload and number of bytes
+    payload: pointer to the payload data
+    numBytes: number of bytes in the payload
+    maxRetries: maximum number of send attempts, minimum is 1, maximum is 5
+    retryDelay: delay between send attempts in milliseconds, minimum is 5000, maximum is 10000
+    Note: The modem must be initialized before calling this function.
+    -------------------------------------------------------------------------------------------------------*/
+    bool success = false;
+    retryDelay = constrain(retryDelay, 5000, 10000); // safety: 5-10 seconds
+    maxRetries = constrain(maxRetries, 1, 5); // safety: 1-5 retries
+
+    if (payload == nullptr || numBytes <= 0) {
+        dbg_println("[LORA] Empty or null payload, skipping send.");
+        return false;
+    }
+
+    for (int attempt = 1; attempt <= maxRetries; attempt++) {
+        modem.dataRate(1);         // Data Rate. 0: SF10 BW 125 kHz
+        modem.beginPacket();
+        modem.write(payload, numBytes);
+        int ok = modem.endPacket(true) > 0;  
+        if (ok) {
+            dbg_println(" ->  Message sent correctly.");
+            success = true;
+            break;
+        } else {
+            dbg_print("x ");    
+            if (attempt < maxRetries) 
+                delay(retryDelay * attempt);  // exponential backoff 
+        }
+    }
+    if (!success){
+        dbg_print(" -> Error sending message after "); dbg_print(maxRetries); dbg_println(" attempts.");}
+    return success;
+}
+
+void printPayloadHex(uint8_t* payload, int numBytes) {
+    /* ------------------------------------------------------------------------------------------------------
+    Print the payload in hexadecimal format for debugging
+    payload: pointer to the payload data
+    numBytes: number of bytes in the payload
+    -------------------------------------------------------------------------------------------------------*/
+    dbg_print("Payload (HEX): ");
+    for (int i = 0; i < numBytes; i++) {
+        if (payload[i] < 0x10) dbg_print("0"); // zero padding
+        dbg_printhex(payload[i]);
+        dbg_print(" ");
+      }
+    dbg_println();
+    dbg_println("               [reserved (1) | version (1) | devId (1) | DATE (4) | TIME (4) | sample_period (2) / VALID PARAMETERS (6*n) | CRC (1)]");
+}
+
 void heartbeat(uint16_t DATEl, uint16_t DATEh, uint16_t TIMEl, uint16_t TIMEh) {
-    // ------------------------------------------------------------------------------------------------------
-    // Build and send heartbeat packet
-    // ------------------------------------------------------------------------------------------------------
-    /*
-        ------------------- HEADER -------------------
-        [0]   -> reserved Byte (1 Byte)
-        [1]   -> HW/SW version (1 byte)
-        [2]   -> Device ID (1 Byte)
-        [3-6] -> Date (4 Bytes)         // Register 51
-            [3-4] -> 1st uint16_t register -> bytes: [low, high]
-            [5-6] -> 2nd uint16_t register -> bytes: [low, high]
-        [7-10] -> Time (4 Bytes)        // Register 54
-        ------------------- PAYLOAD -------------------
-        [11]  -> Heartbeat parameter code (1 Byte)
-        [13] -> Heartbeat value (1 Byte)
-        ------------------- CRC -------------------
-        [N] -> CRC (1 Bytes)
-    */
+    /*------------------------------------------------------------------------------------------------------
+    Build and send heartbeat packet
+
+    ------------------- HEADER -------------------
+    [0]   -> reserved Byte (1 Byte)
+    [1]   -> HW/SW version (1 byte)
+    [2]   -> Device ID (1 Byte)
+    [3-6] -> Date (4 Bytes)         // Register 51
+        [3-4] -> 1st uint16_t register -> bytes: [low, high]
+        [5-6] -> 2nd uint16_t register -> bytes: [low, high]
+    [7-10] -> Time (4 Bytes)        // Register 54
+    ------------------- PAYLOAD -------------------
+    [11]  -> Heartbeat parameter code (1 Byte)
+    [13] -> Heartbeat value (1 Byte)
+    ------------------- CRC -------------------
+    [N] -> CRC (1 Bytes)
+    -------------------------------------------------------------------------------------------------------*/
     uint8_t payload[MAX_PAYLOAD_SIZE];
     int index = 0;
 
@@ -474,45 +473,113 @@ void heartbeat(uint16_t DATEl, uint16_t DATEh, uint16_t TIMEl, uint16_t TIMEh) {
     payload[index++] = crc.calc();
 
     // --- SEND ---
-    dbg_println("Heartbeat Payload:");
+    dbg_println("[LORA] Heartbeat Payload:");
     if (true) { printPayloadHex(payload, index);  }
     dbg_println("--- Sending packet... --- ");
     SendPacket(payload, index);
     dbg_println();
 }
 
+void HandleDownlinkCommand() {
+    /* ------------------------------------------------------------------------------------------------------
+    Handle downlink commands received from the LoRaWAN network
+    This function checks if there is any downlink message available and processes it.
+    --------------------------------------------------------------------------------------------------------*/
+    if (!modem.available()) {
+        dbg_println("[LORA] No downlink message received.");
+        return;
+    }
+
+    uint8_t rcv[64];  // adjust size based on max expected command length
+    int len = 0;
+
+    while (modem.available()) {
+        rcv[len++] = (uint8_t)modem.read();
+    }
+
+    dbg_print("[LORA] Downlink [");
+    dbg_print(len);
+    dbg_print(" bytes]: ");
+    for (int i = 0; i < len; i++) {
+        dbg_print("0x");
+        if (rcv[i] < 0x10) dbg_print("0");
+        dbg_printhex(rcv[i]);
+        dbg_print(" ");
+    }
+    dbg_println();
+
+    if (len == 0) return;
+
+    uint8_t command = rcv[0];
+
+    switch (command) {
+        case 0x01: // Change LoRaWAN Transmit Period
+            if (len >= 3) {
+                dbg_println("[CMD] Change Lorawan Transmit Period triggered");
+                uint16_t newPeriod = rcv[1] | (rcv[2] << 8);
+                changeTransmitPeriod(newPeriod);
+            } else {
+                dbg_println("[CMD] Error: Sample period payload too short");
+            }
+            break;
+        case 0x02: // Force Sample
+            dbg_println("[CMD] Force Sample triggered");
+            ForceSample();
+            break;
+        case 0x03: // Force Wipe
+            dbg_println("[CMD] Force Wipe triggered");
+            ForceWipe();
+            break;
+        case 0x04: // Change Parameter Types
+            if (len < 2) {
+                dbg_println("[CMD] Error: No parameter types provided.");
+                break;
+            } else {
+                dbg_print("[CMD] Change Parameter Types triggered");
+                const int Params = min(len - 1, MAX_PARAM_CODES);  // max 32 parameters
+                changeParamType(Params, rcv);
+            }
+            break;
+        default:
+            dbg_print("[CMD] Error: Unknown command code 0x");
+            dbg_printhexln(command);
+            break;
+    }
+}
+
 void BuildAndSendLoRaPackets(uint16_t sample_period, uint16_t* codes, uint16_t* statuses, uint16_t* values, int numParams, int validCount) {
-    // ------------------------------------------------------------------------------------------------------
-    // Build Lorawan packet
-    // ------------------------------------------------------------------------------------------------------
-    /*
-        ------------------- HEADER -------------------
-        [0]   -> reserved Byte (1 Byte)
-        [1]   -> HW/SW version (1 byte)
-        [2]   -> Device ID (1 Byte)
-        [3-6] -> Date (4 Bytes)         // Register 51
-            [3-4] -> 1st uint16_t register -> bytes: [low, high]
-            [5-6] -> 2nd uint16_t register -> bytes: [low, high]
-        [7-10] -> Time (4 Bytes)        // Register 54
-        ------------------- PAYLOAD -------------------
-        [11-13]  -> Sample Period (1 Byte code + 2 Bytes)  // Register 0   (on 1st packet)
-        [14-(N-1)] -> Valid parameters (6 Bytes per parameter: 1 byte code + 1 byte status + 2 uint16_t ModBus registers): 
-            [i-(i+1)]     -> code
-            [(i+2)-(i+3)] -> status
-            [i-(i+1)]     -> 1st uint16_t register -> bytes: [low, high]
-            [(i+2)-(i+3)] -> 2nd uint16_t register -> bytes: [low, high]
-        ------------------- CRC -------------------
+    /*------------------------------------------------------------------------------------------------------
+    Build and send LoRaWAN packets with valid parameters from the EXO sonde
+
+    ------------------- HEADER -------------------
+    [0]   -> reserved Byte (1 Byte)
+    [1]   -> HW/SW version (1 byte)
+    [2]   -> Device ID (1 Byte)
+    [3-6] -> Date (4 Bytes)         // Register 51
+        [3-4] -> 1st uint16_t register -> bytes: [low, high]
+        [5-6] -> 2nd uint16_t register -> bytes: [low, high]
+    [7-10] -> Time (4 Bytes)        // Register 54
+    ------------------- PAYLOAD -------------------
+    [11-13]  -> Sample Period (1 Byte code + 2 Bytes)  // Register 0   (on 1st packet)
+    [14-(N-1)] -> Valid parameters (6 Bytes per parameter: 1 byte code + 1 byte status + 2 uint16_t ModBus registers): 
+        [i-(i+1)]     -> code
+        [(i+2)-(i+3)] -> status
+        [i-(i+1)]     -> 1st uint16_t register -> bytes: [low, high]
+        [(i+2)-(i+3)] -> 2nd uint16_t register -> bytes: [low, high]
+    ------------------- CRC -------------------
         [N] -> CRC (1 Bytes)
-    */
-    dbg_print("MAX_PAYLOAD: "); dbg_println(MAX_PAYLOAD_SIZE);  
+    
+    --------------------------------------------------------------------------------------------------------*/
+
+    dbg_print("[LORA] MAX_PAYLOAD: "); dbg_println(MAX_PAYLOAD_SIZE);  
     if (MAX_PAYLOAD_SIZE < METADATA_BYTES+PARAM_BYTES) { // not enough MAX_PAYLOAD_SIZE even for 1 parameter
-        dbg_print("ERROR: Can not send any parameter with PAYLOAD_SIZE = "); dbg_println(MAX_PAYLOAD_SIZE);
+        dbg_print("[LORA] ERROR: Can not send any parameter with PAYLOAD_SIZE = "); dbg_println(MAX_PAYLOAD_SIZE);
         return;
     }
 
     int totalPackets = ceil((float)(validCount) / MAX_paramsPerPacket);
     int paramsPerPacket = ceil((float)(validCount) / totalPackets);
-    dbg_print("Total packets: "); dbg_print(totalPackets);
+    dbg_print("[LORA] Total packets: "); dbg_print(totalPackets);
     dbg_print(", with parameters per packet: "); dbg_println(paramsPerPacket);
 
     // Get date & time from registers
@@ -544,7 +611,7 @@ void BuildAndSendLoRaPackets(uint16_t sample_period, uint16_t* codes, uint16_t* 
     int i = 0;  // Index for parameters
 
     for (int pkt = 0; pkt < totalPackets; pkt++) {
-        dbg_print("--- Packet #"); dbg_print(pkt+1); dbg_print(", with params: ");
+        dbg_print("[LORA]--- Packet #"); dbg_print(pkt+1); dbg_print(", with params: ");
 
         uint8_t payload[MAX_PAYLOAD_SIZE];
         int index = 0;
@@ -611,7 +678,13 @@ void BuildAndSendLoRaPackets(uint16_t sample_period, uint16_t* codes, uint16_t* 
     HandleDownlinkCommand();  // Check if any downlink is received
 }
 
+/* -------------------------------------------------------------------------------------
+MKRWAN 1310 SETUP AND LOOP FUNCTIONS
+---------------------------------------------------------------------------------------*/
 void setup() {
+    /* ------------------------------------------------------------------------------------------------------
+    Setup function to initialize the MKRWAN 1310 board
+    --------------------------------------------------------------------------------------------------------*/
     enableWatchdog();
     if (DEBUG) {
         Serial.begin(serialBaud);            // serial bus communication with laptop
@@ -623,30 +696,32 @@ void setup() {
 
     // Set Adapter samples
     modbus.byteToRegister(0x03, SAMPLE_PERIOD_REGISTER, ADAPTER_PERIOD);  
-    dbg_println("Set adapter sample period");
+    dbg_println("[MKRWAN] Set adapter sample period");
 
     //dbg_println("Starting LoRa modem...");
     if (!modem.begin(US915)) { // US915: (902–928 MHz)
-        dbg_println("Failed to start modem module, waiting for a system reboot...");
+        dbg_println("[MKRWAN] Failed to start modem module, waiting for a system reboot...");
         while (1) {} // infinite loop to wait for a system reboot
     }
-    dbg_print("Modem started successfully. ");
+    dbg_print("[MKRWAN] Modem started successfully. ");
     JoinNetwork();
 }
 
 void loop() {
+    /* ------------------------------------------------------------------------------------------------------
+    Main loop function to read sensor data and send it via LoRaWAN
+    ---------------------------------------------------------------------------------------------------------*/
     uint16_t codes[MAX_PARAM_CODES];
     uint16_t statuses[MAX_PARAM_CODES];
     uint16_t values[2 * MAX_PARAM_CODES];
     uint16_t sample_period;
 
-    // ------------------------------------------------------------------------------------------------------
-    // Waiting for Read
-    // ------------------------------------------------------------------------------------------------------
+    /* Waiting for Read
+    ----------------------------------------------------------------------------------------------------*/
     // Only wait if it's NOT a force sample
     if (!FORCE_SAMPLE) {
         TRANSMIT_PERIOD = constrain(TRANSMIT_PERIOD, 60, 7200); // safety
-        dbg_print("\n--- Waiting for "); dbg_print(TRANSMIT_PERIOD); dbg_println(" seconds ---");
+        dbg_print("\n[MKRWAN] --- Waiting for "); dbg_print(TRANSMIT_PERIOD); dbg_println(" seconds ---");
     
         for (int i = 1; i <= TRANSMIT_PERIOD; i++) // wait TRANSMIT_PERIOD seconds
         {
@@ -656,12 +731,11 @@ void loop() {
         }
     } 
     
-    // ------------------------------------------------------------------------------------------------------
-    // Start transmission
-    // ------------------------------------------------------------------------------------------------------
+    /* Start transmission
+    ----------------------------------------------------------------------------------------------------*/
     int validCount = ReadSensorData(sample_period, codes, statuses, values, MAX_PARAM_CODES);
     if (validCount <= 0) {
-        dbg_println("ReadSensorData retured no data — proceeding with heartbeat only");
+        dbg_println("[MKRWAN] ReadSensorData retured no data — proceeding with heartbeat only");
         validCount = 0;
     }
     BuildAndSendLoRaPackets(sample_period, codes, statuses, values, MAX_PARAM_CODES, validCount);
