@@ -8,6 +8,7 @@
 #include "CRC8.h"               // https://github.com/RobTillaart/CRC
 #include "CRC.h"
 #include <MKRWAN.h>             // https://docs.arduino.cc/libraries/mkrwan/
+#include <Adafruit_SleepyDog.h> //https://docs.arduino.cc/libraries/adafruit-sleepydog-library/
 #include "arduino_secrets.h"    // containing SECRET_APP_EUI and SECRET_APP_KEY
 const bool DEBUG = false; // set to true to enable serial debugging
 const bool verbose = false; // set to true to enable verbose output
@@ -53,7 +54,7 @@ const uint8_t VALID_PARAM_CODES[] = {
 LoRaModem modem;
 String appEui = SECRET_APP_EUI; // OTAA credentials
 String appKey = SECRET_APP_KEY;
-const int JOIN_TIMEOUT = 240000; // max waiting time for joining
+const int JOIN_TIMEOUT = 90000; // max waiting time (milliseconds) for joining
 
 // LoRaWAN packet variables
 const int METADATA_BYTES = 1 + 1 + 1 + 8 + 1;  // Reserved + version + deviceID + Date+Time (8B) + CRC
@@ -73,8 +74,57 @@ volatile bool FORCE_SAMPLE = false;
 uint8_t heartbeatCounter = 1;
 const int HEARTBEAT_PARAM_CODE = 255;
 
-// Functions
+// WATCHDOG VARIABLES
+// -------------------------------------------------------------------------------------
+// 5 seconds buffer for watchdog timer to prevent rebooting during transmission
+const int WATCHDOG_BUFFER = 5000;
+
+// FUNCTIONS
+// -------------------------------------------------------------------------------------
+void enableWatchdog() {
+    // ------------------------------------------------------------------------------------------------------
+    //  Enable the watchdog timer, this will reboot the system if it is not reset in time
+    // ------------------------------------------------------------------------------------------------------
+    timeout = max(TRANSMIT_PERIOD * 1000, JOIN_TIMEOUT) + WATCHDOG_BUFFER;
+    int countdownMS = Watchdog.enable(timeout);
+    dbg_print("[WDT] Watchdog enabled with timeout: ");
+    dbg_print(countdownMS / 1000); // print in seconds
+    dbg_println(" seconds");
+}
+
+void resetWatchdog(const char* tag = "") {
+    // ------------------------------------------------------------------------------------------------------
+    //  Reset the watchdog timer, this pings the watchdog to prevent a system reboot
+    // ------------------------------------------------------------------------------------------------------
+    Watchdog.reset();
+    dbg_print("[WDT] Watchdog ping");
+    if (strlen(tag) > 0) {
+        dbg_print(" at: ");
+        dbg_print(tag);
+    }
+    dbg_println(" ");
+}
+
+void updateWatchdogTimeout() {
+    // ------------------------------------------------------------------------------------------------------
+    //  Update the watchdog timeout based on the current TRANSMIT_PERIOD and JOIN_TIMEOUT
+    // ------------------------------------------------------------------------------------------------------
+    Watchdog.disable();              
+    delay(100);                      
+    enableWatchdog();  
+}
+
 bool JoinNetwork(int maxRetries = 5, int retryDelay = 5000){
+    // ------------------------------------------------------------------------------------------------------
+    //  Join the LoRaWAN network using OTAA (Over-The-Air Activation)
+    //  maxRetries: maximum number of join attempts, minimum is 1 , maximum is 5
+    //  retryDelay: delay between join attempts in milliseconds, minimum is 5000, maximum is 10000
+    //  Note: The modem must be initialized before calling this function.
+    //  If the join fails, the function will block indefinitely waiting for a reboot.
+    // ------------------------------------------------------------------------------------------------------
+    resetWatchdog("JoinNetwork() start");
+    retryDelay = constrain(retryDelay, 5000, 10000); // safety: 5-10 seconds
+    maxRetries = constrain(maxRetries, 1, 5); // safety: 1-5 retries
     bool connected = false;
     dbg_print("Module version is: ");
     dbg_print(modem.version());
@@ -89,18 +139,22 @@ bool JoinNetwork(int maxRetries = 5, int retryDelay = 5000){
 
     dbg_print("--- Joining via OTAA... (timeout: "); dbg_print(JOIN_TIMEOUT/1000); dbg_println(" sec) --- ");
     for (int attempt = 1; attempt <= maxRetries; attempt++) {
+        resetWatchdog("JoinNetwork() Join attempt");
         connected = modem.joinOTAA(appEui, appKey, JOIN_TIMEOUT);
         if (connected) {
             break;
         } else {
             dbg_print("x ");   
-            if (attempt < maxRetries) 
-                delay(retryDelay * attempt);  // exponential backoff 
+            if (attempt < maxRetries) { 
+                resetWatchdog("JoinNetwork() retry delay");
+                delay(retryDelay * attempt);  // exponential backoff
+            } 
         }
     }
     if (!connected) {
         dbg_println(" -> Join fail.");
-        while (1) {}
+        dbg_println("waiting for a system reboot...");
+        while (1) {} //infinite loop to wait for a reboot
         return false;
     }
 
@@ -149,7 +203,7 @@ void printPayloadHex(uint8_t* payload, int numBytes) {
 
 void changeTransmitPeriod(uint16_t newPeriod) {
     if (newPeriod < 60) {
-        dbg_print("CMD: Ignored - Transmit period too low: ");
+        dbg_print("CMD: Ignored - Transmit period too low: "); //TODO: change "CMD:"" to "[CMD]" in all places
         dbg_println(newPeriod);
     } else if (newPeriod > 7200) {
         dbg_print("CMD: Ignored - Transmit period too high: ");
@@ -164,6 +218,9 @@ void changeTransmitPeriod(uint16_t newPeriod) {
         ADAPTER_PERIOD = TRANSMIT_PERIOD / 2;
         ADAPTER_PERIOD = constrain(ADAPTER_PERIOD, 15, 3600);  // safety
         bool success = modbus.byteToRegister(0x03, SAMPLE_PERIOD_REGISTER, ADAPTER_PERIOD);
+
+        // Update watchdog timeout
+        updateWatchdogTimeout();
 
         if (success) {
             dbg_print("Adapter sample period set to "); dbg_print(ADAPTER_PERIOD); dbg_println(" seconds");
@@ -184,6 +241,7 @@ void ForceSample() {
     if (success) {
         // Wait for adapter to complete sampling (minimum 15 sec)
         for (int i = 1; i <= 15; i++) {
+            resetWatchdog("ForceSample()");
             delay(1000);
             dbg_print(i); dbg_print(" ");
         }
@@ -554,7 +612,7 @@ void BuildAndSendLoRaPackets(uint16_t sample_period, uint16_t* codes, uint16_t* 
 }
 
 void setup() {
-
+    enableWatchdog();
     if (DEBUG) {
         Serial.begin(serialBaud);            // serial bus communication with laptop
         while (!Serial);                     // wait until port is ready on MKR board
@@ -569,8 +627,8 @@ void setup() {
 
     //dbg_println("Starting LoRa modem...");
     if (!modem.begin(US915)) { // US915: (902–928 MHz)
-        dbg_println("Failed to start modem module");
-        while (1) {}
+        dbg_println("Failed to start modem module, waiting for a system reboot...");
+        while (1) {} // infinite loop to wait for a system reboot
     }
     dbg_print("Modem started successfully. ");
     JoinNetwork();
@@ -592,8 +650,9 @@ void loop() {
     
         for (int i = 1; i <= TRANSMIT_PERIOD; i++) // wait TRANSMIT_PERIOD seconds
         {
-             delay(1000);
-             dbg_print(i);  dbg_print(" ");
+            resetWatchdog("loop() waiting for read");
+            delay(1000);
+            dbg_print(i);  dbg_print(" ");
         }
     } 
     
@@ -609,5 +668,6 @@ void loop() {
 
     // Reset force sample flag
     FORCE_SAMPLE = false;
+    resetWatchdog("loop() end of loop");
 }
 
