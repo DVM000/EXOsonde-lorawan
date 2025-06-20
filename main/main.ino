@@ -86,46 +86,41 @@ uint8_t heartbeatCounter = 1;
 const int HEARTBEAT_PARAM_CODE = 255;
 
 /* -------------------------------------------------------------------------------------
-WATCHDOG GLOBAL VARIABLES
----------------------------------------------------------------------------------------*/
-// 5 seconds buffer for watchdog timer to prevent rebooting during transmission
-const int WATCHDOG_BUFFER = 5000;
-
-/* -------------------------------------------------------------------------------------
 WATCHDOG FUNCTIONS
 ---------------------------------------------------------------------------------------*/
 void enableWatchdog() {
     /*-------------------------------------------------------------------------------------------------------
     Enable the watchdog timer, this will reboot the system if it is not reset in time
     -------------------------------------------------------------------------------------------------------*/
-    int timeout = max(TRANSMIT_PERIOD * 1000, JOIN_TIMEOUT) + WATCHDOG_BUFFER;
-    int countdownMS = Watchdog.enable(timeout);
+    int countdownMS = Watchdog.enable(16000); //max is 16 seconds
     dbg_print("[WDT] Watchdog enabled with timeout: ");
     dbg_print(countdownMS / 1000); // print in seconds
     dbg_println(" seconds");
 }
 
-void resetWatchdog(const char* tag = "") {
+void pingWatchdog(const char* tag = "") {
     /*------------------------------------------------------------------------------------------------------
     Reset the watchdog timer, this pings the watchdog to prevent a system reboot
     -------------------------------------------------------------------------------------------------------*/
     Watchdog.reset();
-    dbg_print("[WDT] Watchdog ping");
-    if (strlen(tag) > 0) {
+    if(verbose && strlen(tag) > 0) {
+        dbg_print("[WDT] Watchdog ping");
         dbg_print(" at: ");
-        dbg_print(tag);
+        dbg_println(tag);
     }
-    dbg_println(" ");
 }
 
-void updateWatchdogTimeout() {
+void mydelay(int ms) {
     /* ------------------------------------------------------------------------------------------------------
-    Update the watchdog timeout based on the current TRANSMIT_PERIOD and JOIN_TIMEOUT
-    --------------------------------------------------------------------------------------------------------*/
-    dbg_println("[WDT] Updating watchdog timeout...");
-    Watchdog.disable();              
-    delay(100);                      
-    enableWatchdog();  
+    Custom delay function to ping the watchdog during long delays
+    ms: delay in milliseconds
+    -------------------------------------------------------------------------------------------------------*/
+    int elapsed = 0;
+    while (elapsed < ms) {
+        pingWatchdog();
+        delay(100);
+        elapsed += 100;
+    }
 }
 
 /* -------------------------------------------------------------------------------------
@@ -137,14 +132,14 @@ void changeTransmitPeriod(uint16_t newPeriod) {
     newPeriod: new transmit period in seconds, must be between 60 and 7200 seconds
     --------------------------------------------------------------------------------------------------------*/
     if (newPeriod < 60) {
-        dbg_print("[CMD] Ignored - Transmit period too low: ");
+        dbg_print("[EXO] Ignored - Transmit period too low: ");
         dbg_println(newPeriod);
     } else if (newPeriod > 7200) {
-        dbg_print("[CMD] Ignored - Transmit period too high: ");
+        dbg_print("[EXO] Ignored - Transmit period too high: ");
         dbg_println(newPeriod);
     } else {
         TRANSMIT_PERIOD = constrain(newPeriod, 60, 7200); // safety
-        dbg_print("[CMD] Transmit period set to ");
+        dbg_print("[EXO] Transmit period set to ");
         dbg_print(TRANSMIT_PERIOD);
         dbg_println(" seconds");
 
@@ -152,9 +147,6 @@ void changeTransmitPeriod(uint16_t newPeriod) {
         ADAPTER_PERIOD = TRANSMIT_PERIOD / 2;
         ADAPTER_PERIOD = constrain(ADAPTER_PERIOD, 15, 3600);  // safety
         bool success = modbus.byteToRegister(0x03, SAMPLE_PERIOD_REGISTER, ADAPTER_PERIOD);
-
-        // Update watchdog timeout
-        updateWatchdogTimeout();
 
         if (success) {
             dbg_print("Adapter sample period set to "); dbg_print(ADAPTER_PERIOD); dbg_println(" seconds");
@@ -179,13 +171,13 @@ void ForceSample() {
     if (success) {
         // Wait for adapter to complete sampling (minimum 15 sec)
         for (int i = 1; i <= 15; i++) {
-            resetWatchdog("ForceSample()");
-            delay(1000);
+            pingWatchdog("ForceSample()");
+            mydelay(1000);
             dbg_print(i); dbg_print(" ");
         }
         FORCE_SAMPLE = true;  // Skip wait in main loop
     } else {
-        dbg_println("[CMD] Error: Failed to send force sample command to adapter");
+        dbg_println("[EXO] Error: Failed to send force sample command to adapter");
     }
 }
 
@@ -202,9 +194,9 @@ void ForceWipe() {
 
     // Check if the command was sent successfully
     if (success) {
-        dbg_println("[CMD] Force wipe command sent to adapter");
+        dbg_println("[EXO] Force wipe command sent to adapter");
     } else {
-        dbg_println("[CMD] Error: Failed to send force wipe command to adapter");
+        dbg_println("[EXO] Error: Failed to send force wipe command to adapter");
     }
 }
 
@@ -215,6 +207,7 @@ bool isValidParameterCode(uint8_t code) {
     Returns: true if the code is valid, false otherwise
     --------------------------------------------------------------------------------------------------------*/
     for (uint8_t valid : VALID_PARAM_CODES) {
+        pingWatchdog("isValidParameterCode() checking code");
         if (code == valid) return true;
     }
     return false;
@@ -229,17 +222,18 @@ void changeParamType(int Params, uint8_t rcv[]) {
     bool writeSuccess = true;
 
     for (int i = 0; i < Params; i++) {
+        pingWatchdog("changeParamType() writing parameter code");
         uint8_t paramCode = rcv[i + 1];
         dbg_print(paramCode); dbg_print(" ");
 
         if (!isValidParameterCode(paramCode)) {
-            dbg_print("\n[CMD] Error: Invalid parameter code "); dbg_println(paramCode);
+            dbg_print("\n[EXO] Error: Invalid parameter code "); dbg_println(paramCode);
             writeSuccess = false;
             break;
         }
 
         if (!modbus.byteToRegister(0x03, MIN_PARAM_TYPE_REGISTER + i, paramCode)) {
-            dbg_print("\n[CMD] Error: Failed to write parameter code "); dbg_println(paramCode);
+            dbg_print("\n[EXO] Error: Failed to write parameter code "); dbg_println(paramCode);
             writeSuccess = false;
             break;
         }
@@ -247,9 +241,9 @@ void changeParamType(int Params, uint8_t rcv[]) {
 
     if (writeSuccess) {
         modbus.byteToRegister(0x03, MIN_PARAM_TYPE_REGISTER + Params, 0);  // Terminate with 0
-        dbg_println("\n[CMD] Parameter types updated successfully.");
+        dbg_println("\n[EXO] Parameter types updated successfully.");
     } else {
-        dbg_println("[CMD] Failed to write parameter types.");
+        dbg_println("[EXO] Failed to write parameter types.");
     }
 }
 
@@ -264,21 +258,24 @@ int ReadSensorData( uint16_t& sample_period, uint16_t* codes, uint16_t* statuses
     numParams: number of parameters to read (maximum is MAX_PARAM_CODES)
     Returns: number of valid parameters read
     --------------------------------------------------------------------------------------------------------*/
+    pingWatchdog("ReadSensorData() start");
 
     // Read sample period register (register 0)
     sample_period = modbus.uint16FromRegister(0x03, SAMPLE_PERIOD_REGISTER);
-    dbg_println(" "); dbg_print("Sample period: "); dbg_println(sample_period);
+    dbg_println(" "); dbg_print("[EXO] Sample period: "); dbg_println(sample_period);
 
     // Read 32 parameter codes (registers 128–159)
-    if (verbose) { dbg_println(" "); dbg_println("Codes:"); }
+    if (verbose) { dbg_println(" "); dbg_println("[EXO] Codes:"); }
     for (int i = 0; i < numParams; i++) {
+        pingWatchdog("ReadSensorData() reading codes");
         codes[i] = modbus.uint16FromRegister(0x03, MIN_PARAM_TYPE_REGISTER + i); 
         if (verbose) { dbg_print(codes[i]);  dbg_print(","); }    
     }
 
     // Read 32 parameter statuses (registers 256–287). Valid parameters correspond only to codes[i]!=0
-    if (verbose) { dbg_println(" "); dbg_println("Statuses:"); }
+    if (verbose) { dbg_println(" "); dbg_println("[EXO] Statuses:"); }
     for (int i = 0; i < numParams; i++) {
+        pingWatchdog("ReadSensorData() reading statuses");
         if (codes[i] != 0) { // more efficient: only read valid parameters
             statuses[i] = modbus.uint16FromRegister(0x03, MIN_PARAM_STATUS_REGISTER + i);
         }
@@ -286,8 +283,9 @@ int ReadSensorData( uint16_t& sample_period, uint16_t* codes, uint16_t* statuses
     }
 
     // Read 32 parameter values (registers 384–447. 64 registers, 2 per floating-point value, little endian)
-    if (verbose) { dbg_println(" "); dbg_println("Values:"); }
+    if (verbose) { dbg_println(" "); dbg_println("[EXO] Values:"); }
     for (int i = 0; i < numParams; i++) {
+        pingWatchdog("ReadSensorData() reading values");
         if (codes[i] != 0) { // more efficient: only read valid parameters
             values[2*i]   = modbus.uint16FromRegister(0x03, MIN_PARAM_VALUE_REGISTER + 2*i, bigEndian);
             values[2*i+1] = modbus.uint16FromRegister(0x03, MIN_PARAM_VALUE_REGISTER + 2*i+1, bigEndian);
@@ -296,13 +294,15 @@ int ReadSensorData( uint16_t& sample_period, uint16_t* codes, uint16_t* statuses
     }
     if (verbose) {
         for (int i = 0; i < 2*numParams; i++) {
+            pingWatchdog("ReadSensorData() printing values");
             dbg_print(values[i]); dbg_print(","); }
     }
     
     // Print valid parameters (code != 0)
     int validCount = 1; // sample_period is 1st parameter
-    dbg_println("idx\tCode\tStatus\tRaw 16-bit register values");
+    dbg_println("[EXO] idx\tCode\tStatus\tRaw 16-bit register values");
     for (int i = 0; i < numParams; i++) {
+        pingWatchdog("ReadSensorData() printing valid parameters");
         if (codes[i] != 0) {
             validCount++;
             dbg_print(i); dbg_print("\t");
@@ -314,10 +314,11 @@ int ReadSensorData( uint16_t& sample_period, uint16_t* codes, uint16_t* statuses
         }
     }
 
-    dbg_print("Number of valid parameters: "); dbg_println(validCount); 
+    dbg_print("[EXO] Number of valid parameters: "); dbg_println(validCount); 
     //dbg_println(" + sample_period"); 
-    dbg_print("Bytes required for parameters: "); dbg_println(validCount*PARAM_BYTES);
+    dbg_print("[EXO] Bytes required for parameters: "); dbg_println(validCount*PARAM_BYTES);
 
+    pingWatchdog("ReadSensorData() end");
     return validCount;
 }
 
@@ -332,7 +333,6 @@ bool JoinNetwork(int maxRetries = 5, int retryDelay = 5000){
     Note: The modem must be initialized before calling this function.
     If the join fails, the function will block indefinitely waiting for a reboot.
     --------------------------------------------------------------------------------------------------------*/
-    resetWatchdog("JoinNetwork() start");
     retryDelay = constrain(retryDelay, 5000, 10000); // safety: 5-10 seconds
     maxRetries = constrain(maxRetries, 1, 5); // safety: 1-5 retries
     bool connected = false;
@@ -349,22 +349,18 @@ bool JoinNetwork(int maxRetries = 5, int retryDelay = 5000){
 
     dbg_print("[LORA] --- Joining via OTAA... (timeout: "); dbg_print(JOIN_TIMEOUT/1000); dbg_println(" sec) --- ");
     for (int attempt = 1; attempt <= maxRetries; attempt++) {
-        resetWatchdog("JoinNetwork() Join attempt");
         connected = modem.joinOTAA(appEui, appKey, JOIN_TIMEOUT);
         if (connected) {
             break;
         } else {
             dbg_print("x ");   
             if (attempt < maxRetries) { 
-                resetWatchdog("JoinNetwork() retry delay");
-                delay(retryDelay * attempt);  // exponential backoff
+                mydelay(retryDelay * attempt);  // exponential backoff
             } 
         }
     }
     if (!connected) {
         dbg_println(" -> Join fail.");
-        dbg_println("waiting for a system reboot...");
-        while (1) {} //infinite loop to wait for a reboot
         return false;
     }
 
@@ -402,7 +398,7 @@ bool SendPacket(uint8_t* payload, int numBytes, int maxRetries = 5, int retryDel
         } else {
             dbg_print("x ");    
             if (attempt < maxRetries) 
-                delay(retryDelay * attempt);  // exponential backoff 
+                mydelay(retryDelay * attempt);  // exponential backoff 
         }
     }
     if (!success){
@@ -444,6 +440,7 @@ void heartbeat(uint16_t DATEl, uint16_t DATEh, uint16_t TIMEl, uint16_t TIMEh) {
     ------------------- CRC -------------------
     [N] -> CRC (1 Bytes)
     -------------------------------------------------------------------------------------------------------*/
+    dbg_print("[LORA]--- Heartbeat Packet"); dbg_print(", with params: ");
     uint8_t payload[MAX_PAYLOAD_SIZE];
     int index = 0;
 
@@ -473,6 +470,7 @@ void heartbeat(uint16_t DATEl, uint16_t DATEh, uint16_t TIMEl, uint16_t TIMEh) {
     payload[index++] = crc.calc();
 
     // --- SEND ---
+    if (verbose) { dbg_printhex(DATEl); dbg_print(" -> "); dbg_printhex(payload[3]); dbg_print(" "); dbg_printhexln(payload[4]); }
     dbg_println("[LORA] Heartbeat Payload:");
     if (true) { printPayloadHex(payload, index);  }
     dbg_println("--- Sending packet... --- ");
@@ -485,6 +483,7 @@ void HandleDownlinkCommand() {
     Handle downlink commands received from the LoRaWAN network
     This function checks if there is any downlink message available and processes it.
     --------------------------------------------------------------------------------------------------------*/
+    pingWatchdog("HandleDownlinkCommand() start");
     if (!modem.available()) {
         dbg_println("[LORA] No downlink message received.");
         return;
@@ -515,36 +514,37 @@ void HandleDownlinkCommand() {
     switch (command) {
         case 0x01: // Change LoRaWAN Transmit Period
             if (len >= 3) {
-                dbg_println("[CMD] Change Lorawan Transmit Period triggered");
+                dbg_println("[LORA] Change Lorawan Transmit Period triggered");
                 uint16_t newPeriod = rcv[1] | (rcv[2] << 8);
                 changeTransmitPeriod(newPeriod);
             } else {
-                dbg_println("[CMD] Error: Sample period payload too short");
+                dbg_println("[LORA] Error: Sample period payload too short");
             }
             break;
         case 0x02: // Force Sample
-            dbg_println("[CMD] Force Sample triggered");
+            dbg_println("[LORA] Force Sample triggered");
             ForceSample();
             break;
         case 0x03: // Force Wipe
-            dbg_println("[CMD] Force Wipe triggered");
+            dbg_println("[LORA] Force Wipe triggered");
             ForceWipe();
             break;
         case 0x04: // Change Parameter Types
             if (len < 2) {
-                dbg_println("[CMD] Error: No parameter types provided.");
+                dbg_println("[LORA] Error: No parameter types provided.");
                 break;
             } else {
-                dbg_print("[CMD] Change Parameter Types triggered");
+                dbg_print("[LORA] Change Parameter Types triggered");
                 const int Params = min(len - 1, MAX_PARAM_CODES);  // max 32 parameters
                 changeParamType(Params, rcv);
             }
             break;
         default:
-            dbg_print("[CMD] Error: Unknown command code 0x");
+            dbg_print("[LORA] Error: Unknown command code 0x");
             dbg_printhexln(command);
             break;
     }
+    pingWatchdog("HandleDownlinkCommand() end");
 }
 
 void BuildAndSendLoRaPackets(uint16_t sample_period, uint16_t* codes, uint16_t* statuses, uint16_t* values, int numParams, int validCount) {
@@ -611,6 +611,7 @@ void BuildAndSendLoRaPackets(uint16_t sample_period, uint16_t* codes, uint16_t* 
     int i = 0;  // Index for parameters
 
     for (int pkt = 0; pkt < totalPackets; pkt++) {
+        pingWatchdog("BuildAndSendLoRaPackets() building packets");
         dbg_print("[LORA]--- Packet #"); dbg_print(pkt+1); dbg_print(", with params: ");
 
         uint8_t payload[MAX_PAYLOAD_SIZE];
@@ -685,11 +686,11 @@ void setup() {
     /* ------------------------------------------------------------------------------------------------------
     Setup function to initialize the MKRWAN 1310 board
     --------------------------------------------------------------------------------------------------------*/
-    enableWatchdog();
     if (DEBUG) {
         Serial.begin(serialBaud);            // serial bus communication with laptop
         while (!Serial);                     // wait until port is ready on MKR board
     }
+    dbg_println("[MKRWAN] Starting setup()");
 
     modbusSerial.begin(modbusBaudRate);  // modbus communication with Sonde device
     modbus.begin(modbusAddress, modbusSerial, 6);
@@ -698,13 +699,19 @@ void setup() {
     modbus.byteToRegister(0x03, SAMPLE_PERIOD_REGISTER, ADAPTER_PERIOD);  
     dbg_println("[MKRWAN] Set adapter sample period");
 
-    //dbg_println("Starting LoRa modem...");
     if (!modem.begin(US915)) { // US915: (902–928 MHz)
-        dbg_println("[MKRWAN] Failed to start modem module, waiting for a system reboot...");
-        while (1) {} // infinite loop to wait for a system reboot
+        dbg_println("[MKRWAN] Failed to start modem module");
     }
-    dbg_print("[MKRWAN] Modem started successfully. ");
-    JoinNetwork();
+    dbg_println("[MKRWAN] Modem started successfully. ");
+    bool isJoined = JoinNetwork();
+
+    enableWatchdog();
+    if(isJoined){
+        dbg_println("[MKRWAN] Joined LoRaWAN network successfully.");
+    } else {
+        dbg_println("[MKRWAN] Failed to join LoRaWAN network. Rebooting...");
+        while(1){}
+    }
 }
 
 void loop() {
@@ -725,8 +732,8 @@ void loop() {
     
         for (int i = 1; i <= TRANSMIT_PERIOD; i++) // wait TRANSMIT_PERIOD seconds
         {
-            resetWatchdog("loop() waiting for read");
-            delay(1000);
+            pingWatchdog("loop() waiting");
+            mydelay(1000);
             dbg_print(i);  dbg_print(" ");
         }
     } 
@@ -742,6 +749,6 @@ void loop() {
 
     // Reset force sample flag
     FORCE_SAMPLE = false;
-    resetWatchdog("loop() end of loop");
+    pingWatchdog("loop() end of loop");
 }
 
