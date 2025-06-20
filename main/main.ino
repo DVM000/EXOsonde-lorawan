@@ -30,7 +30,7 @@ const bool verbose = false; // set to true to enable verbose output
 EXOSONDE DEVICE GLOBAL VARIABLES
 ---------------------------------------------------------------------------------------*/
 uint8_t devID = 0x12;   // Sonde device ID
-uint8_t version = 0x02; // Sonde Hardware/Software version
+uint8_t version = 0x03; // Sonde Hardware/Software version
 
 // Bus configuration
 byte modbusAddress = 0x01;
