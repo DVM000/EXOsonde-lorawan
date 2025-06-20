@@ -466,8 +466,10 @@ bool SendPacket(uint8_t* payload, int numBytes, int maxRetries = 5, int retryDel
             break;
         } else {
             dbg_print("x ");    
-            if (attempt < maxRetries) 
+            if (attempt < maxRetries) {
+                blinkWaiting();
                 mydelay(retryDelay * attempt);  // exponential backoff 
+            }
         }
     }
     if (!success){
