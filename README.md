@@ -120,6 +120,22 @@ A heartbeat signal will always be transmitted and **cannot be disabled**, even w
 
 > **Note:** If the heartbeat resets to 1 before reaching 255, this indicates that the MKR WAN 1310 has been restarted.
 
+## LED Status
+
+The MKRWAN 1310 uses the built-in LED (pin 6) to indicate system status:
+
+| State                        | Pattern Description           | Function                  |
+| ---------------------------- | ----------------------------- | ------------------------- |
+| **Join Success**             | 5 fast flashes                | `blinkJoinPassed()`           |
+| **Join Failure**             | 3 long flashes with pause     | `blinkJoinFailed()`           |
+| **Sensor Read Success**      | 2 short flashes               | `blinkSensorReadPassed()` |
+| **Sensor Read Failure**      | 2 medium flashes              | `blinkSensorReadFailed()` |
+| **LoRaWAN TX Success**       | 3 fast flashes                | `blinkTxPassed()`         |
+| **LoRaWAN TX Failure**       | 4 slow flashes                | `blinkTxFailed()`         |
+| **Waiting** | 1 brief flash | `blinkWaiting()`          |
+
+All functions are defined in `main.ino`.
+
 ## Downlink Command Structure
 
 The device supports several LoRaWAN downlink commands for remote configuration and control. Downlink messages follow a simple command-based structure, where the **first byte indicates the command type**, and the **subsequent bytes contain any associated parameters**.

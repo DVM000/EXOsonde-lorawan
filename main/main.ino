@@ -86,6 +86,73 @@ uint8_t heartbeatCounter = 1;
 const int HEARTBEAT_PARAM_CODE = 255;
 
 /* -------------------------------------------------------------------------------------
+LED FUNCTIONS
+---------------------------------------------------------------------------------------*/
+void blinkJoinPassed() {
+  int blinkDelay = 100;
+  for (int i = 0; i < 5; i++) {
+    digitalWrite(LED_BUILTIN, HIGH);
+    mydelay(blinkDelay);
+    digitalWrite(LED_BUILTIN, LOW);
+    mydelay(blinkDelay);
+  }
+}
+
+void blinkJoinFailed() {
+  int blinkDelay = 300;
+  for (int i = 0; i < 3; i++) {
+    digitalWrite(LED_BUILTIN, HIGH);
+    mydelay(blinkDelay);
+    digitalWrite(LED_BUILTIN, LOW);
+    mydelay(blinkDelay);
+  }
+  mydelay(1000);
+}
+
+void blinkSensorReadPassed() {
+  digitalWrite(LED_BUILTIN, HIGH);
+  mydelay(50);
+  digitalWrite(LED_BUILTIN, LOW);
+  mydelay(150);
+  digitalWrite(LED_BUILTIN, HIGH);
+  mydelay(50);
+  digitalWrite(LED_BUILTIN, LOW);
+}
+
+void blinkSensorReadFailed() {
+  for (int i = 0; i < 2; i++) {
+    digitalWrite(LED_BUILTIN, HIGH);
+    mydelay(250);
+    digitalWrite(LED_BUILTIN, LOW);
+    mydelay(100);
+  }
+}
+
+void blinkTxPassed() {
+  for (int i = 0; i < 3; i++) {
+    digitalWrite(LED_BUILTIN, HIGH);
+    mydelay(80);
+    digitalWrite(LED_BUILTIN, LOW);
+    mydelay(80);
+  }
+}
+
+void blinkTxFailed() {
+  for (int i = 0; i < 4; i++) {
+    digitalWrite(LED_BUILTIN, HIGH);
+    mydelay(100);
+    digitalWrite(LED_BUILTIN, LOW);
+    mydelay(300);
+  }
+}
+
+void blinkWaiting() {
+  digitalWrite(LED_BUILTIN, HIGH);
+  mydelay(200);
+  digitalWrite(LED_BUILTIN, LOW);
+}
+
+/* -------------------------------------------------------------------------------------
 WATCHDOG FUNCTIONS
 ---------------------------------------------------------------------------------------*/
 void enableWatchdog() {
@@ -349,6 +416,7 @@ bool JoinNetwork(int maxRetries = 5, int retryDelay = 5000){
 
     dbg_print("[LORA] --- Joining via OTAA... (timeout: "); dbg_print(JOIN_TIMEOUT/1000); dbg_println(" sec) --- ");
     for (int attempt = 1; attempt <= maxRetries; attempt++) {
+        blinkWaiting();
         connected = modem.joinOTAA(appEui, appKey, JOIN_TIMEOUT);
         if (connected) {
             break;
@@ -393,6 +461,7 @@ bool SendPacket(uint8_t* payload, int numBytes, int maxRetries = 5, int retryDel
         int ok = modem.endPacket(true) > 0;  
         if (ok) {
             dbg_println(" ->  Message sent correctly.");
+            blinkTxPassed();
             success = true;
             break;
         } else {
@@ -402,7 +471,9 @@ bool SendPacket(uint8_t* payload, int numBytes, int maxRetries = 5, int retryDel
         }
     }
     if (!success){
-        dbg_print(" -> Error sending message after "); dbg_print(maxRetries); dbg_println(" attempts.");}
+        blinkTxFailed();
+        dbg_print(" -> Error sending message after "); dbg_print(maxRetries); dbg_println(" attempts.");
+    }
     return success;
 }
 
@@ -697,6 +768,9 @@ void setup() {
     }
     dbg_println("[MKRWAN] Starting setup()");
 
+    // enable led light
+    pinMode(LED_BUILTIN, OUTPUT);
+
     modbusSerial.begin(modbusBaudRate);  // modbus communication with Sonde device
     modbus.begin(modbusAddress, modbusSerial, 6);
 
@@ -738,6 +812,7 @@ void loop() {
         for (int i = 1; i <= TRANSMIT_PERIOD; i++) // wait TRANSMIT_PERIOD seconds
         {
             pingWatchdog("loop() waiting");
+            if (i % 5 == 0) blinkWaiting();
             mydelay(1000);
             dbg_print(i);  dbg_print(" ");
         }
@@ -748,7 +823,10 @@ void loop() {
     int validCount = ReadSensorData(sample_period, codes, statuses, values, MAX_PARAM_CODES);
     if (validCount <= 0) {
         dbg_println("[MKRWAN] ReadSensorData retured no data — proceeding with heartbeat only");
+        blinkSensorReadFailed();
         validCount = 0;
+    } else {
+        blinkSensorReadPassed();
     }
     BuildAndSendLoRaPackets(sample_period, codes, statuses, values, MAX_PARAM_CODES, validCount);
 
