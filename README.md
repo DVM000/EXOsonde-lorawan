@@ -120,7 +120,7 @@ A heartbeat signal will always be transmitted and **cannot be disabled**, even w
 
 > **Note:** If the heartbeat resets to 1 before reaching 255, this indicates that the MKR WAN 1310 has been restarted.
 
-### Downlink Command Structure
+## Downlink Command Structure
 
 The device supports several LoRaWAN downlink commands for remote configuration and control. Downlink messages follow a simple command-based structure, where the **first byte indicates the command type**, and the **subsequent bytes contain any associated parameters**.
 
@@ -128,7 +128,7 @@ Each command is processed immediately after uplink transmission or upon receivin
 
 ---
 
-#### **Command 0x01: Change LoRaWAN Transmit Period**
+### **Command 0x01: Change LoRaWAN Transmit Period**
 
 **Purpose:** Updates how often the device sends uplink packets over LoRaWAN.  
 **Structure:**  
@@ -148,7 +148,7 @@ To set a 10-minute (600-second) transmit period:
 
 ---
 
-#### **Command 0x02: Force Sample**
+### **Command 0x02: Force Sample**
 
 **Purpose:** Triggers an immediate sample on the adapter and sends a LoRaWAN uplink with the latest data.  
 **Structure:**  
@@ -163,7 +163,7 @@ To set a 10-minute (600-second) transmit period:
 >NOTE: the firmware takes 15 seconds since it takes 15 seconds for the exosonde to fill the registers with the new values.
 ---
 
-#### **Command 0x03: Force Wipe**
+### **Command 0x03: Force Wipe**
 
 **Purpose:** Commands the adapter to run the sonde’s mechanical wiper (if available).  
 **Structure:**  
@@ -176,7 +176,7 @@ To set a 10-minute (600-second) transmit period:
 
 ---
 
-#### **Command 0x04: Change Parameter Types**
+### **Command 0x04: Change Parameter Types**
 
 **Purpose:** Dynamically reconfigures which sonde parameters the adapter provides.  
 **Structure:**  
@@ -202,7 +202,7 @@ Send:
 
 ---
 
-#### **Command 0x05: Force Mkrwan 1310 reboot**
+### **Command 0x05: Force Mkrwan 1310 reboot**
 **Purpose:** Reboot the arduino Mkrwan
 
 **Structure:**  
@@ -214,7 +214,7 @@ Send:
 **Details:**
 - Run with caution, rebooting the mkrwan causes it to disconnect from the network and retry the join request.
 
-#### Example Downlink Commands (Hex Format)
+### Example Downlink Commands (Hex Format)
 
 | Command Description                 | Command Code | Payload Example (Hex Bytes)                  | Notes |
 |------------------------------------|--------------|----------------------------------------------|-------|
@@ -226,7 +226,7 @@ Send:
 | **Force Mkrwan 1310 reboot** | `0x05`       | `05`                                         | Reboots the MKR WAN 1310 device. |
 | **Invalid Command**                | `0xFF`       | `FF`                                         | Handled as unknown command in firmware. |
 
-##### Format Breakdown
+#### Format Breakdown
 
 - First byte is always the **command code**:
   - `0x01`: Change transmit period
@@ -239,7 +239,7 @@ Send:
   - For `0x01`: 2 bytes (little endian) for new transmit interval.
   - For `0x04`: Up to 32 parameter codes (1 byte each, from 1 to 243).
 
-#####  Notes
+####  Notes
 
 - All values must be sent as **raw binary** hex bytes.
 - All numeric values are sent in **little-endian** format where applicable.
