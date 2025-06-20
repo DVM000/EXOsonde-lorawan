@@ -10,6 +10,7 @@
 #include <MKRWAN.h>             // https://docs.arduino.cc/libraries/mkrwan/
 #include <Adafruit_SleepyDog.h> //https://docs.arduino.cc/libraries/adafruit-sleepydog-library/
 #include "arduino_secrets.h"    // containing SECRET_APP_EUI and SECRET_APP_KEY
+#include <FlashStorage.h> // https://docs.arduino.cc/libraries/flashstorage/
 
 /* -------------------------------------------------------------------------------------
 DEBUGGING 
@@ -65,7 +66,6 @@ LORAWAN GLOBAL VARIABLES
 LoRaModem modem;
 String appEui = SECRET_APP_EUI; // OTAA credentials
 String appKey = SECRET_APP_KEY;
-const int JOIN_TIMEOUT = 90000; // max waiting time (milliseconds) for joining
 
 // LoRaWAN packet variables
 const int METADATA_BYTES = 1 + 1 + 1 + 8 + 1;  // Reserved + version + deviceID + Date+Time (8B) + CRC
@@ -74,6 +74,8 @@ const int MAX_PAYLOAD_SIZE = METADATA_BYTES + 6*PARAM_BYTES; // minimum for 1 pa
 // There is also LoRaWAN payload limit for each Spreaing Factor: 51 for SF10, 222 for SF8, ... // https://www.semtech.com/design-support/faq/faq-lorawan/P20
 const int MAX_paramsPerPacket = (MAX_PAYLOAD_SIZE - METADATA_BYTES) / PARAM_BYTES; // ( maximum payload - (header+CRC) ) / bytes_per_parameter
 
+// max waiting time (milliseconds) for joining
+const int JOIN_TIMEOUT = 90000; 
 // Default lorawan transmit period (seconds), min = 60 sec, max = 7200 sec
 uint16_t TRANSMIT_PERIOD = 300;
 // Default adapter sample period (seconds), min = 15 sec, max = 3600 sec
@@ -84,6 +86,32 @@ volatile bool FORCE_SAMPLE = false;
 // Heartbeat parameter (always send, increments 1…255 then wraps to 1)
 uint8_t heartbeatCounter = 1;
 const int HEARTBEAT_PARAM_CODE = 255;
+
+/* -------------------------------------------------------------------------------------
+STATEFUL CONFIGURATION
+---------------------------------------------------------------------------------------*/
+typedef struct {
+    uint16_t txPeriod;
+} PersistentConfig;
+FlashStorage(config_store, PersistentConfig);
+
+void saveConfig() {
+    dbg_print("[CONFIG] Saving configuration... ");
+    PersistentConfig current = config_store.read();
+    if (current.txPeriod != TRANSMIT_PERIOD) {
+        config_store.write({TRANSMIT_PERIOD});
+        dbg_println("Done.");
+    } else {
+        dbg_println("No changes.");
+    }
+}
+
+void loadConfig() {
+    dbg_print("[CONFIG] Loading configuration... ");
+    PersistentConfig config = config_store.read();
+    TRANSMIT_PERIOD = (config.txPeriod >= 60 && config.txPeriod <= 7200) ? config.txPeriod : 300;
+    ADAPTER_PERIOD = TRANSMIT_PERIOD / 2;
+}
 
 /* -------------------------------------------------------------------------------------
 LED FUNCTIONS
@@ -214,6 +242,7 @@ void changeTransmitPeriod(uint16_t newPeriod) {
         ADAPTER_PERIOD = TRANSMIT_PERIOD / 2;
         ADAPTER_PERIOD = constrain(ADAPTER_PERIOD, 15, 3600);  // safety
         bool success = modbus.byteToRegister(0x03, SAMPLE_PERIOD_REGISTER, ADAPTER_PERIOD);
+        saveConfig();
 
         if (success) {
             dbg_print("Adapter sample period set to "); dbg_print(ADAPTER_PERIOD); dbg_println(" seconds");
@@ -775,6 +804,9 @@ void setup() {
 
     modbusSerial.begin(modbusBaudRate);  // modbus communication with Sonde device
     modbus.begin(modbusAddress, modbusSerial, 6);
+
+    // Load persistent configuration
+    loadConfig();
 
     // Set Adapter samples
     modbus.byteToRegister(0x03, SAMPLE_PERIOD_REGISTER, ADAPTER_PERIOD);  
