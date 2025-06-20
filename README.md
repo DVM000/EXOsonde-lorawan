@@ -202,6 +202,18 @@ Send:
 
 ---
 
+#### **Command 0x05: Force Mkrwan 1310 reboot**
+**Purpose:** Reboot the arduino Mkrwan
+
+**Structure:**  
+```
+[0x05]
+```
+**Length:** 1 byte 
+
+**Details:**
+- Run with caution, rebooting the mkrwan causes it to disconnect from the network and retry the join request.
+
 #### Example Downlink Commands (Hex Format)
 
 | Command Description                 | Command Code | Payload Example (Hex Bytes)                  | Notes |
@@ -211,6 +223,7 @@ Send:
 | **Force Wipe**                     | `0x03`       | `03`                                         | Initiates a wiper clean cycle on the sensor. |
 | **Change Parameter Types** (1 param) | `0x04`     | `04 18`                                      | Sets param list to only **pH (code 18)**. |
 | **Change Parameter Types** (multi) | `0x04`       | `04 18 212 223 243` → `04 12 D5 DF F3`       | pH (18), ODO mg/L (212), Turbidity FNU (223), NitraLED mg/L (243) – converted to 1-byte hex codes: `12 D4 DF F3`. |
+| **Force Mkrwan 1310 reboot** | `0x05`       | `05`                                         | Reboots the MKR WAN 1310 device. |
 | **Invalid Command**                | `0xFF`       | `FF`                                         | Handled as unknown command in firmware. |
 
 ##### Format Breakdown
@@ -220,6 +233,7 @@ Send:
   - `0x02`: Force sample
   - `0x03`: Force wipe
   - `0x04`: Change parameter types
+  - `0x05`: Force reboot
 
 - Payloads after the command code vary:
   - For `0x01`: 2 bytes (little endian) for new transmit interval.

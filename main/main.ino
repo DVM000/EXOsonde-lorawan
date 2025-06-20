@@ -539,6 +539,11 @@ void HandleDownlinkCommand() {
                 changeParamType(Params, rcv);
             }
             break;
+        case 0x05: // Force a mkrwan reboot
+            dbg_println("[LORA] Force Reboot triggered");
+            dbg_println("[LORA] Rebooting the MKR WAN 1310...");
+            while(1){}
+            break;
         default:
             dbg_print("[LORA] Error: Unknown command code 0x");
             dbg_printhexln(command);
