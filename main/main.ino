@@ -77,7 +77,8 @@ const int MAX_paramsPerPacket = (MAX_PAYLOAD_SIZE - METADATA_BYTES) / PARAM_BYTE
 // max waiting time (milliseconds) for joining
 const int JOIN_TIMEOUT = 90000; 
 // Default lorawan transmit period (seconds), min = 60 sec, max = 7200 sec
-uint16_t TRANSMIT_PERIOD = 300;
+const uint16_t DEFAULT_TRANSMIT_PERIOD = 300;
+uint16_t TRANSMIT_PERIOD = DEFAULT_TRANSMIT_PERIOD;
 // Default adapter sample period (seconds), min = 15 sec, max = 3600 sec
 uint16_t ADAPTER_PERIOD = TRANSMIT_PERIOD / 2;
 // Force Sample flag
@@ -112,11 +113,13 @@ void saveConfig() {
 
 void loadConfig() {
     /*-------------------------------------------------------------------------------------------------------
-    Load the configuration from persistent storage
+    Load the configuration from persistent storage.
+    This function reads the configuration and sets the transmit period and adapter period accordingly.
+    If the stored value is out of bounds, it uses the default TRANSMIT_PERIOD.
     --------------------------------------------------------------------------------------------------------*/
     dbg_print("[CONFIG] Loading configuration... ");
     PersistentConfig config = config_store.read();
-    TRANSMIT_PERIOD = (config.txPeriod >= 60 && config.txPeriod <= 7200) ? config.txPeriod : 300;
+    TRANSMIT_PERIOD = (config.txPeriod >= 60 && config.txPeriod <= 7200) ? config.txPeriod : DEFAULT_TRANSMIT_PERIOD;
     ADAPTER_PERIOD = TRANSMIT_PERIOD / 2;
 }
 
