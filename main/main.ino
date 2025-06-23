@@ -96,6 +96,10 @@ typedef struct {
 FlashStorage(config_store, PersistentConfig);
 
 void saveConfig() {
+    /*-------------------------------------------------------------------------------------------------------
+    Save the current configuration to persistent storage
+    This function checks if the values have changed before writing to avoid unnecessary writes.
+    -------------------------------------------------------------------------------------------------------*/
     dbg_print("[CONFIG] Saving configuration... ");
     PersistentConfig current = config_store.read();
     if (current.txPeriod != TRANSMIT_PERIOD) {
@@ -107,6 +111,9 @@ void saveConfig() {
 }
 
 void loadConfig() {
+    /*-------------------------------------------------------------------------------------------------------
+    Load the configuration from persistent storage
+    --------------------------------------------------------------------------------------------------------*/
     dbg_print("[CONFIG] Loading configuration... ");
     PersistentConfig config = config_store.read();
     TRANSMIT_PERIOD = (config.txPeriod >= 60 && config.txPeriod <= 7200) ? config.txPeriod : 300;
@@ -117,67 +124,88 @@ void loadConfig() {
 LED FUNCTIONS
 ---------------------------------------------------------------------------------------*/
 void blinkJoinPassed() {
-  int blinkDelay = 100;
-  for (int i = 0; i < 5; i++) {
+    /*-------------------------------------------------------------------------------------------------------
+    Blink the built-in LED to indicate a successful join to the LoRaWAN network
+    --------------------------------------------------------------------------------------------------------*/
+    int blinkDelay = 100;
+    for (int i = 0; i < 5; i++) {
     digitalWrite(LED_BUILTIN, HIGH);
     mydelay(blinkDelay);
     digitalWrite(LED_BUILTIN, LOW);
     mydelay(blinkDelay);
-  }
+    }
 }
 
 void blinkJoinFailed() {
-  int blinkDelay = 300;
-  for (int i = 0; i < 3; i++) {
+    /*-------------------------------------------------------------------------------------------------------
+    Blink the built-in LED to indicate a failed join to the LoRaWAN network
+    --------------------------------------------------------------------------------------------------------*/
+    int blinkDelay = 300;
+    for (int i = 0; i < 3; i++) {
     digitalWrite(LED_BUILTIN, HIGH);
     mydelay(blinkDelay);
     digitalWrite(LED_BUILTIN, LOW);
     mydelay(blinkDelay);
-  }
-  mydelay(1000);
+    }
+    mydelay(1000);
 }
 
 void blinkSensorReadPassed() {
-  digitalWrite(LED_BUILTIN, HIGH);
-  mydelay(50);
-  digitalWrite(LED_BUILTIN, LOW);
-  mydelay(150);
-  digitalWrite(LED_BUILTIN, HIGH);
-  mydelay(50);
-  digitalWrite(LED_BUILTIN, LOW);
+    /*-------------------------------------------------------------------------------------------------------
+    Blink the built-in LED to indicate a successful sensor read
+    --------------------------------------------------------------------------------------------------------*/
+    digitalWrite(LED_BUILTIN, HIGH);
+    mydelay(50);
+    digitalWrite(LED_BUILTIN, LOW);
+    mydelay(150);
+    digitalWrite(LED_BUILTIN, HIGH);
+    mydelay(50);
+    digitalWrite(LED_BUILTIN, LOW);
 }
 
 void blinkSensorReadFailed() {
-  for (int i = 0; i < 2; i++) {
+    /*-------------------------------------------------------------------------------------------------------
+    Blink the built-in LED to indicate a failed sensor read
+    --------------------------------------------------------------------------------------------------------*/
+    for (int i = 0; i < 2; i++) {
     digitalWrite(LED_BUILTIN, HIGH);
     mydelay(250);
     digitalWrite(LED_BUILTIN, LOW);
     mydelay(100);
-  }
+    }
 }
 
 void blinkTxPassed() {
-  for (int i = 0; i < 3; i++) {
+    /*-------------------------------------------------------------------------------------------------------
+    Blink the built-in LED to indicate a successful transmission of a LoRaWAN packet
+    --------------------------------------------------------------------------------------------------------*/
+    for (int i = 0; i < 3; i++) {
     digitalWrite(LED_BUILTIN, HIGH);
     mydelay(80);
     digitalWrite(LED_BUILTIN, LOW);
     mydelay(80);
-  }
+    }
 }
 
 void blinkTxFailed() {
-  for (int i = 0; i < 4; i++) {
+    /*-------------------------------------------------------------------------------------------------------
+    Blink the built-in LED to indicate a failed transmission of a LoRaWAN packet
+    --------------------------------------------------------------------------------------------------------*/
+    for (int i = 0; i < 4; i++) {
     digitalWrite(LED_BUILTIN, HIGH);
     mydelay(100);
     digitalWrite(LED_BUILTIN, LOW);
     mydelay(300);
-  }
+    }
 }
 
 void blinkWaiting() {
-  digitalWrite(LED_BUILTIN, HIGH);
-  mydelay(200);
-  digitalWrite(LED_BUILTIN, LOW);
+    /*-------------------------------------------------------------------------------------------------------
+    Blink the built-in LED to indicate waiting for an operation to complete
+    --------------------------------------------------------------------------------------------------------*/
+    digitalWrite(LED_BUILTIN, HIGH);
+    mydelay(200);
+    digitalWrite(LED_BUILTIN, LOW);
 }
 
 /* -------------------------------------------------------------------------------------
