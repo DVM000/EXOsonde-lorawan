@@ -106,6 +106,7 @@ void saveConfig() {
     if (current.txPeriod != TRANSMIT_PERIOD) {
         config_store.write({TRANSMIT_PERIOD});
         dbg_println("Done.");
+        dbg_print("- TRANSMIT_PERIOD: "); dbg_println(TRANSMIT_PERIOD);
     } else {
         dbg_println("No changes.");
     }
@@ -121,6 +122,8 @@ void loadConfig() {
     PersistentConfig config = config_store.read();
     TRANSMIT_PERIOD = (config.txPeriod >= 60 && config.txPeriod <= 7200) ? config.txPeriod : DEFAULT_TRANSMIT_PERIOD;
     ADAPTER_PERIOD = TRANSMIT_PERIOD / 2;
+    dbg_println("Done.");
+    dbg_print("- TRANSMIT_PERIOD: "); dbg_println(TRANSMIT_PERIOD);
 }
 
 /* -------------------------------------------------------------------------------------
