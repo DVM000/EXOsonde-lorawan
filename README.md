@@ -110,6 +110,10 @@ The LoRaWAN payload will be divided into multiple packets, each conforming to th
 [N]   -> CRC8 byte
 ```
 
+### Date/Time
+
+The MKRWAN firmware extracts date and time from the EXO Sonde using Modbus registers **51** (date) and **54** (time). To ensure accurate timestamping, these registers must always remain enabled. During `setup()`, the MKRWAN automatically checks and enforces this requirement. If the EXO Sonde has already reached its maximum limit of **32 enabled parameters**, the MKRWAN will remove the last two parameters in the list to make room for the required date and time registers.
+
 ## Heartbeat Measurement
 
 A heartbeat signal will always be transmitted and **cannot be disabled**, even when no data is being collected from the EXO Sonde. This signal is a 1-byte value that starts at 1 and increments to 255, then wraps back to 1. The heartbeat is a custom parameter specifically designed to monitor the EXO Sonde to LoRaWAN Bridge. It is not part of Xylem’s official EXO Sonde documentation.
