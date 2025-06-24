@@ -257,6 +257,15 @@ void mydelay(int ms) {
 /* -------------------------------------------------------------------------------------
 EXOSONDE FUNCTIONS
 ---------------------------------------------------------------------------------------*/
+bool setSamplePeriod() {
+    /* ------------------------------------------------------------------------------------------------------
+    Set the sample period in the adapter by writing to the Modbus register
+    --------------------------------------------------------------------------------------------------------*/
+    bool highByteSuccess = modbus.byteToRegister(SAMPLE_PERIOD_REGISTER, 1, (ADAPTER_PERIOD >> 8));  // upper byte
+    bool lowByteSuccess  = modbus.byteToRegister(SAMPLE_PERIOD_REGISTER, 2, (ADAPTER_PERIOD & 0xFF)); // lower byte
+    return highByteSuccess && lowByteSuccess;
+}
+
 void changeTransmitPeriod(uint16_t newPeriod) {
     /* ------------------------------------------------------------------------------------------------------
     Change the LoRaWAN transmit period and update the adapter sample period accordingly
@@ -277,9 +286,9 @@ void changeTransmitPeriod(uint16_t newPeriod) {
         // Set adapter sample period to half of send period
         ADAPTER_PERIOD = TRANSMIT_PERIOD / 2;
         ADAPTER_PERIOD = constrain(ADAPTER_PERIOD, 15, 3600);  // safety
-        bool success = modbus.byteToRegister(0x03, SAMPLE_PERIOD_REGISTER, ADAPTER_PERIOD);
         saveConfig();
 
+        bool success = setSamplePeriod();
         if (success) {
             dbg_print("Adapter sample period set to "); dbg_print(ADAPTER_PERIOD); dbg_println(" seconds");
         } else {
@@ -294,9 +303,9 @@ void ForceSample() {
     It will wait for the adapter to complete sampling, which takes at least 15 seconds.
     --------------------------------------------------------------------------------------------------------*/
     // Send force sample command to adapter with one retry attempt
-    bool success = modbus.byteToRegister(FORCE_SAMPLE_REGISTER,0x03, 2);
+    bool success = modbus.byteToRegister(FORCE_SAMPLE_REGISTER, 2, 2);
     if (!success) {
-        success = modbus.byteToRegister(FORCE_SAMPLE_REGISTER,0x03, 2);
+        success = modbus.byteToRegister(FORCE_SAMPLE_REGISTER, 2, 2);
     }
 
     // Check if the command was sent successfully
@@ -319,9 +328,9 @@ void ForceWipe() {
     This command is used to reset the adapter and clear its memory.
     --------------------------------------------------------------------------------------------------------*/
     // Send force wipe command to adapter with one retry attempt
-    bool success = modbus.byteToRegister(FORCE_WIPE_REGISTER,0x03, 2);
+    bool success = modbus.byteToRegister(FORCE_WIPE_REGISTER, 2, 2);
     if (!success) {
-        success = modbus.byteToRegister(FORCE_WIPE_REGISTER,0x03, 2);
+        success = modbus.byteToRegister(FORCE_WIPE_REGISTER, 2, 2);
     }
 
     // Check if the command was sent successfully
@@ -364,7 +373,7 @@ void changeParamType(int Params, uint8_t rcv[]) {
             break;
         }
 
-        if (!modbus.byteToRegister(0x03, MIN_PARAM_TYPE_REGISTER + i, paramCode)) {
+        if (!modbus.byteToRegister(MIN_PARAM_TYPE_REGISTER + i, 2, paramCode)) {
             dbg_print("\n[EXO] Error: Failed to write parameter code "); dbg_println(paramCode);
             writeSuccess = false;
             break;
@@ -372,7 +381,7 @@ void changeParamType(int Params, uint8_t rcv[]) {
     }
 
     if (writeSuccess) {
-        modbus.byteToRegister(0x03, MIN_PARAM_TYPE_REGISTER + Params, 0);  // Terminate with 0
+        modbus.byteToRegister(MIN_PARAM_TYPE_REGISTER + Params, 2, 0);  // Terminate with 0
         dbg_println("\n[EXO] Parameter types updated successfully.");
     } else {
         dbg_println("[EXO] Failed to write parameter types.");
@@ -884,7 +893,7 @@ void setup() {
     loadConfig();
 
     // Set Adapter samples
-    modbus.byteToRegister(0x03, SAMPLE_PERIOD_REGISTER, ADAPTER_PERIOD);  
+    setSamplePeriod();
     dbg_println("[MKRWAN] Set adapter sample period");
 
     if (!modem.begin(US915)) { // US915: (902–928 MHz)
