@@ -45,6 +45,8 @@ modbusMaster modbus;
 const int SAMPLE_PERIOD_REGISTER = 0;
 const int FORCE_SAMPLE_REGISTER = 1;
 const int FORCE_WIPE_REGISTER = 2;
+const int DATE_REGISTER = 51;
+const int TIME_REGISTER = 54;
 const int MIN_PARAM_TYPE_REGISTER = 128; // 128-159
 const int MAX_PARAM_TYPE_REGISTER = 159;
 const int MIN_PARAM_STATUS_REGISTER = 256; // 256-287
@@ -438,8 +440,8 @@ int ReadSensorData( uint16_t& sample_period, uint16_t* codes, uint16_t* statuses
             dbg_print(i); dbg_print("\t");
             dbg_print(codes[i]); dbg_print("\t");
             dbg_print(statuses[i]); dbg_print("\t");
-            if (codes[i] == 51) { dbg_print("(DATE) ");  validCount--; } // not counting as parameter to be sent in payload. It will go in Header
-            if (codes[i] == 54) { dbg_print("(TIME) ");  validCount--; } 
+            if (codes[i] == DATE_REGISTER) { dbg_print("(DATE) ");  validCount--; } // not counting as parameter to be sent in payload. It will go in Header
+            if (codes[i] == TIME_REGISTER) { dbg_print("(TIME) ");  validCount--; } 
             dbg_printhex(values[2*i]); dbg_print(" "); dbg_printhexln(values[2*i+1]); 
         }
     }
@@ -450,6 +452,44 @@ int ReadSensorData( uint16_t& sample_period, uint16_t* codes, uint16_t* statuses
 
     pingWatchdog("ReadSensorData() end");
     return validCount;
+}
+
+void EnableDateTimeRegister() {
+    /* ------------------------------------------------------------------------------------------------------
+    Enable the date and time registers (51 and 54) in the adapter by ensuring they are present in the 
+    parameter codes.
+    -------------------------------------------------------------------------------------------------------*/
+    uint16_t currentCodes[MAX_PARAM_CODES];
+    uint8_t filteredCodes[MAX_PARAM_CODES];
+    int filteredCount = 0;
+    bool hasDate = false;
+    bool hasTime = false;
+
+    // Step 1: Read current param codes
+    for (int i = 0; i < MAX_PARAM_CODES; i++) {
+        pingWatchdog("EnableDateRegister() reading codes");
+        currentCodes[i] = modbus.uint16FromRegister(0x03, MIN_PARAM_TYPE_REGISTER + i);
+        if (verbose) { dbg_print(currentCodes[i]); dbg_print(",");}
+    }
+
+    // Step 2: Filter out 52 and 53, keep others, and track 51 and 54
+    for (int i = 0; i < MAX_PARAM_CODES; i++) {
+        pingWatchdog("EnableDateRegister() filtering codes");
+        uint16_t code = currentCodes[i];
+        if (code == 0 || code == 52 || code == 53) continue;
+
+        if (code == DATE_REGISTER) hasDate = true;
+        if (code == TIME_REGISTER) hasTime = true;
+
+        filteredCodes[filteredCount++] = code;
+    }
+
+    // Step 3: Ensure 51 and 54 are added if missing
+    if (!has51) filteredCodes[filteredCount++] = 51;
+    if (!has54) filteredCodes[filteredCount++] = 54;
+
+    // Step 4: Write updated param codes to adapter
+    changeParamType(filteredCount, filteredCodes);
 }
 
 /* -------------------------------------------------------------------------------------
@@ -727,8 +767,8 @@ void BuildAndSendLoRaPackets(uint16_t sample_period, uint16_t* codes, uint16_t* 
     uint16_t DATEl, DATEh, TIMEl, TIMEh;
     int idxDate = -1; int idxTime = -1;
     for (int i = 0; i < numParams; i++) {
-        if (codes[i] == 51) idxDate = 2*i;
-        if (codes[i] == 54) idxTime = 2*i;
+        if (codes[i] == DATE_REGISTER) idxDate = 2*i;
+        if (codes[i] == TIME_REGISTER) idxTime = 2*i;
     }
 
     if (idxDate >= 0) {
@@ -787,7 +827,7 @@ void BuildAndSendLoRaPackets(uint16_t sample_period, uint16_t* codes, uint16_t* 
         if (index + 4 >= MAX_PAYLOAD_SIZE) continue; // avoid overload
 
         while (remainingParams > 0 && i < numParams) {
-            if (codes[i] != 0 && codes[i] != 51  &&  codes[i] != 54) {
+            if (codes[i] != 0 && codes[i] != DATE_REGISTER  &&  codes[i] != TIME_REGISTER) {
                 payload[index++] = codes[i] & 0xFF;       // 7a- Parameter code
                 payload[index++] = statuses[i] & 0xFF;    // 7b- Parameter status
 
@@ -836,7 +876,8 @@ void setup() {
     // enable led light
     pinMode(LED_BUILTIN, OUTPUT);
 
-    modbusSerial.begin(modbusBaudRate);  // modbus communication with Sonde device
+    // modbus communication with Sonde device
+    modbusSerial.begin(modbusBaudRate);  
     modbus.begin(modbusAddress, modbusSerial, 6);
 
     // Load persistent configuration
@@ -852,7 +893,13 @@ void setup() {
     dbg_println("[MKRWAN] Modem started successfully. ");
     bool isJoined = JoinNetwork();
 
+    //enable watchdog
     enableWatchdog();
+
+    // Enable date/time register if not already enabled
+    EnableDateTimeRegister();
+
+    // Print device information
     if(isJoined){
         dbg_println("[MKRWAN] Joined LoRaWAN network successfully.");
     } else {
