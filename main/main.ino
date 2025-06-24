@@ -472,7 +472,7 @@ void EnableDateTimeRegister() {
         if (verbose) { dbg_print(currentCodes[i]); dbg_print(",");}
     }
 
-    // Step 2: Filter out 52 and 53, keep others, and track 51 and 54
+    // Step 2: Filter out 52-53 and keep 51, track 51 and 54
     for (int i = 0; i < MAX_PARAM_CODES; i++) {
         pingWatchdog("EnableDateRegister() filtering codes");
         uint16_t code = currentCodes[i];
@@ -485,8 +485,8 @@ void EnableDateTimeRegister() {
     }
 
     // Step 3: Ensure 51 and 54 are added if missing
-    if (!has51) filteredCodes[filteredCount++] = 51;
-    if (!has54) filteredCodes[filteredCount++] = 54;
+    if (!hasDate) filteredCodes[filteredCount++] = DATE_REGISTER;
+    if (!hasTime) filteredCodes[filteredCount++] = TIME_REGISTER;
 
     // Step 4: Write updated param codes to adapter
     changeParamType(filteredCount, filteredCodes);
