@@ -493,11 +493,25 @@ void EnableDateTimeRegister() {
         filteredCodes[filteredCount++] = code;
     }
 
-    // Step 3: Ensure 51 and 54 are added if missing
-    if (!hasDate) filteredCodes[filteredCount++] = DATE_REGISTER;
-    if (!hasTime) filteredCodes[filteredCount++] = TIME_REGISTER;
+    // Step 3: If already full (>= 32 after filtering), make room for 51 and 54
+    int requiredSpace = 0;
+    if (!hasDate) requiredSpace++;
+    if (!hasTime) requiredSpace++;
 
-    // Step 4: Write updated param codes to adapter
+    if (filteredCount + requiredSpace > MAX_PARAM_CODES) {
+        dbg_println("[EXO] Full param list. Dropping last parameters to make room for 51 and 54...");
+        filteredCount = MAX_PARAM_CODES - requiredSpace;
+    }
+
+    // Step 4: Ensure 51 and 54 are present
+    if (!hasDate && filteredCount < MAX_PARAM_CODES) {
+        filteredCodes[filteredCount++] = DATE_REGISTER;
+    }
+    if (!hasTime && filteredCount < MAX_PARAM_CODES) {
+        filteredCodes[filteredCount++] = TIME_REGISTER;
+    }
+
+    // Step 5: Write updated param codes back to adapter
     changeParamType(filteredCount, filteredCodes);
 }
 
@@ -915,6 +929,7 @@ void setup() {
         dbg_println("[MKRWAN] Failed to join LoRaWAN network. Rebooting...");
         while(1){}
     }
+    pingWatchdog("setup() end");
 }
 
 void loop() {
