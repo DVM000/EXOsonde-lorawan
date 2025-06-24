@@ -467,14 +467,14 @@ void EnableDateTimeRegister() {
 
     // Step 1: Read current param codes
     for (int i = 0; i < MAX_PARAM_CODES; i++) {
-        pingWatchdog("EnableDateRegister() reading codes");
+        pingWatchdog("EnableDateTimeRegister() reading codes");
         currentCodes[i] = modbus.uint16FromRegister(0x03, MIN_PARAM_TYPE_REGISTER + i);
         if (verbose) { dbg_print(currentCodes[i]); dbg_print(",");}
     }
 
     // Step 2: Filter out 52-53 and keep 51, track 51 and 54
     for (int i = 0; i < MAX_PARAM_CODES; i++) {
-        pingWatchdog("EnableDateRegister() filtering codes");
+        pingWatchdog("EnableDateTimeRegister() filtering codes");
         uint16_t code = currentCodes[i];
         if (code == 0 || code == 52 || code == 53) continue;
 
