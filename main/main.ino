@@ -480,7 +480,7 @@ void EnableDateTimeRegister() {
         currentCodes[i] = modbus.uint16FromRegister(0x03, MIN_PARAM_TYPE_REGISTER + i);
         dbg_print(currentCodes[i]); dbg_print(",");
     }
-    dbg_println(" ")
+    dbg_println(" ");
 
     // Step 2: Filter out 52-53 and keep 51, track 51 and 54
     for (int i = 0; i < MAX_PARAM_CODES; i++) {
