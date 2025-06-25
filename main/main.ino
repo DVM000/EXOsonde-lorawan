@@ -478,7 +478,7 @@ void EnableDateTimeRegister() {
     for (int i = 0; i < MAX_PARAM_CODES; i++) {
         pingWatchdog("EnableDateTimeRegister() reading codes");
         currentCodes[i] = modbus.uint16FromRegister(0x03, MIN_PARAM_TYPE_REGISTER + i);
-        if (verbose) { dbg_print(currentCodes[i]); dbg_print(",");}
+        dbg_print(currentCodes[i]); dbg_print(",");
     }
 
     // Step 2: Filter out 52-53 and keep 51, track 51 and 54
