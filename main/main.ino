@@ -847,7 +847,10 @@ void BuildAndSendLoRaPackets(uint16_t sample_period, uint16_t* codes, uint16_t* 
             dbg_print("0 (sample_period), ");
         }
 
-        if (index + 4 >= MAX_PAYLOAD_SIZE) continue; // avoid overload
+        if (index + 4 >= MAX_PAYLOAD_SIZE) { // avoid overload
+            dbg_println("[LORA] ERROR: Not enough space for more parameters in payload, skipping packet.");
+            continue;
+        }  
 
         while (remainingParams > 0 && i < numParams) {
             if (codes[i] != 0 && codes[i] != DATE_REGISTER  &&  codes[i] != TIME_REGISTER) {
