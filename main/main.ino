@@ -476,14 +476,12 @@ void EnableDateTimeRegister() {
 
     // Step 1: Read current param codes
     for (int i = 0; i < MAX_PARAM_CODES; i++) {
-        pingWatchdog("EnableDateTimeRegister() reading codes");
         currentCodes[i] = modbus.uint16FromRegister(0x03, MIN_PARAM_TYPE_REGISTER + i);
         dbg_print(currentCodes[i]); dbg_print(",");
     }
 
     // Step 2: Filter out 52-53 and keep 51, track 51 and 54
     for (int i = 0; i < MAX_PARAM_CODES; i++) {
-        pingWatchdog("EnableDateTimeRegister() filtering codes");
         uint16_t code = currentCodes[i];
         if (code == 0 || code == 52 || code == 53) continue;
 
@@ -910,8 +908,15 @@ void setup() {
     loadConfig();
 
     // Set Adapter samples
-    setSamplePeriod();
-    dbg_println("[MKRWAN] Set adapter sample period");
+    bool success = setSamplePeriod();
+    if (success) {
+        dbg_print("[MKRWAN] Adapter sample period set to "); dbg_print(ADAPTER_PERIOD); dbg_println(" seconds");
+    } else {
+        dbg_println("[MKRWAN] WARNING: Failed to write adapter sample period");
+    }
+
+    // Enable date/time register if not already enabled
+    EnableDateTimeRegister();
 
     if (!modem.begin(US915)) { // US915: (902–928 MHz)
         dbg_println("[MKRWAN] Failed to start modem module");
@@ -921,9 +926,6 @@ void setup() {
 
     //enable watchdog
     enableWatchdog();
-
-    // Enable date/time register if not already enabled
-    EnableDateTimeRegister();
 
     // Print device information
     if(isJoined){
