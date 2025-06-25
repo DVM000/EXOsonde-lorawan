@@ -475,10 +475,12 @@ void EnableDateTimeRegister() {
     bool hasTime = false;
 
     // Step 1: Read current param codes
+    dbg_print("[EXO] Currently enabled Parameters: ");
     for (int i = 0; i < MAX_PARAM_CODES; i++) {
         currentCodes[i] = modbus.uint16FromRegister(0x03, MIN_PARAM_TYPE_REGISTER + i);
         dbg_print(currentCodes[i]); dbg_print(",");
     }
+    dbg_println(" ")
 
     // Step 2: Filter out 52-53 and keep 51, track 51 and 54
     for (int i = 0; i < MAX_PARAM_CODES; i++) {
@@ -497,7 +499,7 @@ void EnableDateTimeRegister() {
     if (!hasTime) requiredSpace++;
 
     if (filteredCount + requiredSpace > MAX_PARAM_CODES) {
-        dbg_println("[EXO] Full param list. Dropping last parameters to make room for 51 and 54...");
+        dbg_println("[EXO] Parameter space is full. Dropping last parameters to make room for 51 and 54...");
         filteredCount = MAX_PARAM_CODES - requiredSpace;
     }
 
@@ -510,6 +512,7 @@ void EnableDateTimeRegister() {
     }
 
     // Step 5: Write updated param codes back to adapter
+    dbg_println("[EXO] Adding Date and Time registers to enabled parameters...");
     changeParamType(filteredCount, filteredCodes);
 }
 
