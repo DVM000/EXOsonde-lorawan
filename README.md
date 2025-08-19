@@ -152,6 +152,7 @@ Each command is processed immediately after uplink transmission or upon receivin
 
 **Purpose:** Updates how often the device sends uplink packets over LoRaWAN.  
 **Structure:**  
+This is in little endian format.
 ```
 [0x01][<Low Byte of Period>][<High Byte of Period>]
 ```
@@ -160,12 +161,13 @@ Each command is processed immediately after uplink transmission or upon receivin
 - Period must be between **60 and 7200 seconds** (1 minute to 2 hours).
 - Internally, this also updates the adapter’s sample period to half the transmit period, bounded between 15 and 3600 seconds.
 
-**Example:**  
+**Chirpstack Hex Format Example:**  
 To set a 10-minute (600-second) transmit period:  
 ```
-0x01 0x58 0x02  →  0x0258 = 600
+015802  →  5802 = 600
 ```
-
+- fport=1
+- confirm=true
 ---
 
 ### **Command 0x02: Force Sample**
@@ -181,6 +183,14 @@ To set a 10-minute (600-second) transmit period:
 - The firmware waits 15 seconds before reading new values.
 - The FORCE_SAMPLE flag bypasses the usual transmit wait cycle.
 >NOTE: the firmware takes 15 seconds since it takes 15 seconds for the exosonde to fill the registers with the new values.
+
+**Chirpstack Hex Format Example:**  
+To force the mkrwan 1310 to sample:  
+```
+02
+```
+- fport=1
+- confirm=true
 ---
 
 ### **Command 0x03: Force Wipe**
@@ -194,6 +204,13 @@ To set a 10-minute (600-second) transmit period:
 **Details:**
 - This writes a value to Modbus register 2 to activate the wipe.
 
+**Chirpstack Hex Format Example:**  
+To force the mkrwan 1310 to wipe:  
+```
+03
+```
+- fport=1
+- confirm=true
 ---
 
 ### **Command 0x04: Change Parameter Types**
@@ -210,16 +227,21 @@ To set a 10-minute (600-second) transmit period:
 - Writing ends with a **terminating 0** to signal the end of the parameter list (handled automatically).
 - Invalid codes are ignored, and the entire command is rejected on error.
 
-**Example:**  
+**Chirpstack Hex Format Example:**  
 To request:  
 - Temperature (code 1)  
 - pH (code 18)  
-- Turbidity (code 37)  
+- Turbidity (code 37)
+- Date (code 51)
+- Time (code 54)
 Send:  
 ```
-0x04 0x01 0x12 0x25 ()
+040112253336
 ```
+- fport=1
+- confirm=true
 
+>NOTE: Always include code 51 and 54 in the parameter list when changing the parameter types. These codes are the date and time registers that are used in the packet header.
 ---
 
 ### **Command 0x05: Force Mkrwan 1310 reboot**
@@ -234,36 +256,48 @@ Send:
 **Details:**
 - Run with caution, rebooting the mkrwan causes it to disconnect from the network and retry the join request.
 
+**Chirpstack Hex Format Example:**  
+To force the mkrwan 1310 to reboot:  
+```
+05
+```
+- fport=1
+- confirm=true
+
+---
+
 ### Example Downlink Commands (Hex Format)
 
-| Command Description                 | Command Code | Payload Example (Hex Bytes)                  | Notes |
-|------------------------------------|--------------|----------------------------------------------|-------|
-| **Force Sample**                   | `0x02`       | `02`                                         | Triggers a new sensor sample immediately. |
-| **Change Transmit Period**         | `0x01`       | `01 2C 01`                                   | Sets transmit period to **300 sec** (`0x012C`). Format: `01 [LOW_BYTE] [HIGH_BYTE]`. |
-| **Force Wipe**                     | `0x03`       | `03`                                         | Initiates a wiper clean cycle on the sensor. |
-| **Change Parameter Types** (1 param) | `0x04`     | `04 18`                                      | Sets param list to only **pH (code 18)**. |
-| **Change Parameter Types** (multi) | `0x04`       | `04 18 212 223 243` → `04 12 D5 DF F3`       | pH (18), ODO mg/L (212), Turbidity FNU (223), NitraLED mg/L (243) – converted to 1-byte hex codes: `12 D4 DF F3`. |
-| **Force Mkrwan 1310 reboot** | `0x05`       | `05`                                         | Reboots the MKR WAN 1310 device. |
-| **Invalid Command**                | `0xFF`       | `FF`                                         | Handled as unknown command in firmware. |
+| Command Description                  | Command Code | Chirpstack Hex Format Example | Notes                                                                                |
+| ------------------------------------ | ------------ | --------------------------- | ------------------------------------------------------------------------------------ |
+| **Change Transmit Period**           | `0x01`       | `012C01`                  | Sets transmit period to **300 sec** (`0x012C`). Format: `01 [LOW_BYTE] [HIGH_BYTE]`. |
+| **Force Sample**                     | `0x02`       | `02`                        | Triggers a new sensor sample immediately.                                            |
+| **Force Wipe**                       | `0x03`       | `03`                        | Initiates a wiper clean cycle on the sensor.                                         |
+| **Change Parameter Types**   | `0x04`       | `040112253336`      | Sends parameter codes: 4, 1, 18, 37, 51, 54.                                         |
+| **Change Parameter Types (Reset Registers)**   | `0x04`       | `043336`      | Sends parameter codes 51, 54, and zero out the remaining registers.       |
+| **Force Mkrwan 1310 reboot**         | `0x05`       | `05`                        | Reboots the MKR WAN 1310 device.                                                     |
+| **Invalid Command**                  | `0xFF`       | `FF`                        | Handled as unknown command in firmware.  
 
 #### Format Breakdown
 
-- First byte is always the **command code**:
-  - `0x01`: Change transmit period
-  - `0x02`: Force sample
-  - `0x03`: Force wipe
-  - `0x04`: Change parameter types
-  - `0x05`: Force reboot
+* First byte is always the **command code**:
 
-- Payloads after the command code vary:
-  - For `0x01`: 2 bytes (little endian) for new transmit interval.
-  - For `0x04`: Up to 32 parameter codes (1 byte each, from 1 to 243).
+  * `0x01`: Change transmit period
+  * `0x02`: Force sample
+  * `0x03`: Force wipe
+  * `0x04`: Change parameter types
+  * `0x05`: Force reboot
+
+* Payloads after the command code vary:
+
+  * For `0x01`: 2 bytes (little endian) for new transmit interval.
+  * For `0x04`: Up to 32 parameter codes (1 byte each, from 1 to 243).
 
 ####  Notes
 
-- All values must be sent as **raw binary** hex bytes.
 - All numeric values are sent in **little-endian** format where applicable.
 - Commands are handled immediately after uplink completion to ensure synchronization with the adapter’s update cycle.
+- Always include code 51 and 54 in the parameter list when changing the parameter types. These codes are the date and time registers that are used in the packet header.
 
 ## Available Parameter Codes
 

@@ -31,7 +31,7 @@ const bool verbose = false; // set to true to enable verbose output
 EXOSONDE DEVICE GLOBAL VARIABLES
 ---------------------------------------------------------------------------------------*/
 uint8_t devID = 0x12;   // Sonde device ID
-uint8_t version = 0x03; // Sonde Hardware/Software version
+uint8_t version = 0x04; // Sonde Hardware/Software version
 
 // Bus configuration
 byte modbusAddress = 0x01;
@@ -54,6 +54,7 @@ const int MAX_PARAM_STATUS_REGISTER = 287;
 const int MIN_PARAM_VALUE_REGISTER = 384; // 384-447
 const int MAX_PARAM_VALUE_REGISTER = 447;
 const int MAX_PARAM_CODES = 32; // 32 parameters
+const int TERMINATE_CODE = 0;
 const uint8_t VALID_PARAM_CODES[] = {
     1, 2, 3, 4, 5, 6, 7, 10, 12, 17, 18, 19, 20, 21, 22, 23,
     28, 37, 47, 48, 51, 52, 53, 54, 95, 101, 106, 108, 110,
@@ -71,20 +72,23 @@ String appKey = SECRET_APP_KEY;
 
 // LoRaWAN packet variables
 const int METADATA_BYTES = 1 + 1 + 1 + 8 + 1;  // Reserved + version + deviceID + Date+Time (8B) + CRC
-const int PARAM_BYTES = 1 + 1 + 4;             // 1 byte of code + 1 byte of status + 2 uint16_t registers per parameter 
-const int MAX_PAYLOAD_SIZE = METADATA_BYTES + 6*PARAM_BYTES; // minimum for 1 packet: MEDATADABYTES + 1*PARAM_BYTES
-// There is also LoRaWAN payload limit for each Spreaing Factor: 51 for SF10, 222 for SF8, ... // https://www.semtech.com/design-support/faq/faq-lorawan/P20
+const int PARAM_BYTES = 1 + 1 + 4;             // 1 byte of code + 1 byte of status + 2 uint16_t registers per parameter
+const int PACKETS_PER_PAYLOAD = 6; // how many packets to send in one LoRaWAN payload
+const int MAX_PAYLOAD_SIZE = METADATA_BYTES + PACKETS_PER_PAYLOAD*PARAM_BYTES; // minimum for 1 packet: MEDATADABYTES + 1*PARAM_BYTES
+// There is also LoRaWAN payload limit for each Spreading Factor: 51 for SF10, 222 for SF8, ... // https://www.semtech.com/design-support/faq/faq-lorawan/P20
 const int MAX_paramsPerPacket = (MAX_PAYLOAD_SIZE - METADATA_BYTES) / PARAM_BYTES; // ( maximum payload - (header+CRC) ) / bytes_per_parameter
 
 // max waiting time (milliseconds) for joining
 const int JOIN_TIMEOUT = 90000; 
+// waiting time to avoid overloading the network (milliseconds)
+const int AVOID_OVERLOAD_TIME = 8000;
 // Default lorawan transmit period (seconds), min = 60 sec, max = 7200 sec
 const uint16_t DEFAULT_TRANSMIT_PERIOD = 300;
 uint16_t TRANSMIT_PERIOD = DEFAULT_TRANSMIT_PERIOD;
 // Default adapter sample period (seconds), min = 15 sec, max = 3600 sec
 uint16_t ADAPTER_PERIOD = TRANSMIT_PERIOD / 2;
 // Force Sample flag
-volatile bool FORCE_SAMPLE = false;
+volatile bool FORCE_SAMPLE = false; 
 
 // Heartbeat parameter (always send, increments 1…255 then wraps to 1)
 uint8_t heartbeatCounter = 1;
@@ -349,7 +353,7 @@ bool isValidParameterCode(uint8_t code) {
     --------------------------------------------------------------------------------------------------------*/
     for (uint8_t valid : VALID_PARAM_CODES) {
         pingWatchdog("isValidParameterCode() checking code");
-        if (code == valid) return true;
+        if (code == valid || code == TERMINATE_CODE) return true;
     }
     return false;
 }
@@ -358,13 +362,13 @@ void changeParamType(int Params, uint8_t rcv[]) {
     /* ------------------------------------------------------------------------------------------------------
     Change the parameter types in the adapter by writing to the Modbus registers
     Params: number of parameters to change
-    rcv: array containing the parameter codes to write, first byte is the command code
+    rcv: array containing the parameter codes to write
     --------------------------------------------------------------------------------------------------------*/
     bool writeSuccess = true;
 
     for (int i = 0; i < Params; i++) {
         pingWatchdog("changeParamType() writing parameter code");
-        uint8_t paramCode = rcv[i + 1];
+        uint8_t paramCode = rcv[i];
         dbg_print(paramCode); dbg_print(" ");
 
         if (!isValidParameterCode(paramCode)) {
@@ -380,8 +384,13 @@ void changeParamType(int Params, uint8_t rcv[]) {
         }
     }
 
+    // Zero out the remaining registers if Params < MAX_PARAM_CODES
+    for (int i = Params; i < MAX_PARAM_CODES; i++) {
+        pingWatchdog("changeParamType() zeroing remaining registers");
+        modbus.byteToRegister(MIN_PARAM_TYPE_REGISTER + i, 2, TERMINATE_CODE);
+    }
+
     if (writeSuccess) {
-        modbus.byteToRegister(MIN_PARAM_TYPE_REGISTER + Params, 2, 0);  // Terminate with 0
         dbg_println("\n[EXO] Parameter types updated successfully.");
     } else {
         dbg_println("[EXO] Failed to write parameter types.");
@@ -482,37 +491,54 @@ void EnableDateTimeRegister() {
     }
     dbg_println(" ");
 
-    // Step 2: Filter out 52-53 and keep 51, track 51 and 54
+    // Step 2: Check if date and time registers are already present
+    for (int i = 0; i < MAX_PARAM_CODES; i++) {
+        uint16_t code = currentCodes[i];
+        if (code == DATE_REGISTER) hasDate = true;
+        if (code == TIME_REGISTER) hasTime = true;
+    }
+
+    // Step 3: If both date and time are already present, no need to modify anything
+    if (hasDate && hasTime) {
+        dbg_println("[EXO] Date and Time registers are already enabled. No changes needed.");
+        return;
+    }
+
+    // Step 4: throw away 0, 51, 52, 53, 54 and keep all other valid codes
     for (int i = 0; i < MAX_PARAM_CODES; i++) {
         uint16_t code = currentCodes[i];
         if (code == 0 || code == 52 || code == 53) continue;
-
-        if (code == DATE_REGISTER) hasDate = true;
-        if (code == TIME_REGISTER) hasTime = true;
+        
+        // throw away date(51)/time(54) if they're already present (we'll add them again later)
+        if (code == DATE_REGISTER && hasDate) continue;
+        if (code == TIME_REGISTER && hasTime) continue;
 
         filteredCodes[filteredCount++] = code;
     }
 
-    // Step 3: If already full (>= 32 after filtering), make room for 51 and 54
+    // Step 5: Calculate required space for missing date/time registers
     int requiredSpace = 0;
     if (!hasDate) requiredSpace++;
     if (!hasTime) requiredSpace++;
 
+    // Step 6: If already full (>= 32 after filtering), make room for missing date/time registers
     if (filteredCount + requiredSpace > MAX_PARAM_CODES) {
-        dbg_println("[EXO] Parameter space is full. Dropping last parameters to make room for 51 and 54...");
+        dbg_println("[EXO] Parameter space is full. Dropping last parameters to make room for missing date/time registers...");
         filteredCount = MAX_PARAM_CODES - requiredSpace;
     }
 
-    // Step 4: Ensure 51 and 54 are present
+    // Step 7: Add missing date and time registers
     if (!hasDate && filteredCount < MAX_PARAM_CODES) {
         filteredCodes[filteredCount++] = DATE_REGISTER;
+        dbg_println("[EXO] Adding DATE register (51)");
     }
     if (!hasTime && filteredCount < MAX_PARAM_CODES) {
         filteredCodes[filteredCount++] = TIME_REGISTER;
+        dbg_println("[EXO] Adding TIME register (54)");
     }
 
-    // Step 5: Write updated param codes back to adapter
-    dbg_println("[EXO] Adding Date and Time registers to enabled parameters...");
+    // Step 8: Write updated param codes back to adapter
+    dbg_println("[EXO] Writing updated parameter codes to adapter...");
     changeParamType(filteredCount, filteredCodes);
 }
 
@@ -734,8 +760,13 @@ void HandleDownlinkCommand() {
                 dbg_println("[LORA] Error: No parameter types provided.");
                 break;
             } else {
-                dbg_print("[LORA] Change Parameter Types triggered");
-                const int Params = min(len - 1, MAX_PARAM_CODES);  // max 32 parameters
+                dbg_print("[LORA] Change Parameter Types triggered ");
+                //remove the command code from the array
+                for (int i = 1; i < len; i++) {
+                    rcv[i - 1] = rcv[i];
+                }
+                len--;
+                const int Params = min(len, MAX_PARAM_CODES);  // max 32 parameters
                 changeParamType(Params, rcv);
             }
             break;
@@ -745,7 +776,7 @@ void HandleDownlinkCommand() {
             while(1){}
             break;
         default:
-            dbg_print("[LORA] Error: Unknown command code 0x");
+            dbg_print("[LORA] Error: Unknown command code - ");
             dbg_printhexln(command);
             break;
     }
@@ -882,6 +913,8 @@ void BuildAndSendLoRaPackets(uint16_t sample_period, uint16_t* codes, uint16_t* 
         dbg_println("--- Sending packet... --- ");
         SendPacket(payload, index);
         dbg_println();
+        dbg_print("--- Waiting for "); dbg_print(AVOID_OVERLOAD_TIME/1000); dbg_println(" seconds to avoid overloading the network ---");
+        mydelay(AVOID_OVERLOAD_TIME);
     }
     heartbeat(DATEl, DATEh, TIMEl, TIMEh); //send the heartbeat packet
     HandleDownlinkCommand();  // Check if any downlink is received
@@ -963,7 +996,11 @@ void loop() {
             mydelay(1000);
             dbg_print(i);  dbg_print(" ");
         }
-    } 
+    }
+    else {
+        // Reset force sample flag
+        FORCE_SAMPLE = false;
+    }
     
     /* Start transmission
     ----------------------------------------------------------------------------------------------------*/
@@ -977,8 +1014,5 @@ void loop() {
     }
     BuildAndSendLoRaPackets(sample_period, codes, statuses, values, MAX_PARAM_CODES, validCount);
 
-    // Reset force sample flag
-    FORCE_SAMPLE = false;
     pingWatchdog("loop() end of loop");
 }
-
