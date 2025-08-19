@@ -20,7 +20,7 @@ DEBUGGING
     NOTE: if enabled, the mkrwan will not work if the end device does not except the 
         serial port
 ---------------------------------------------------------------------------------------*/
-const bool DEBUG = true; // set to true to enable serial debugging
+const bool DEBUG = false; // set to true to enable serial debugging
 const bool verbose = false; // set to true to enable verbose output
 #define dbg_print(x)     if (DEBUG) Serial.print(x)
 #define dbg_println(x)   if (DEBUG) Serial.println(x)
@@ -31,7 +31,7 @@ const bool verbose = false; // set to true to enable verbose output
 EXOSONDE DEVICE GLOBAL VARIABLES
 ---------------------------------------------------------------------------------------*/
 uint8_t devID = 0x12;   // Sonde device ID
-uint8_t version = 0x03; // Sonde Hardware/Software version
+uint8_t version = 0x04; // Sonde Hardware/Software version
 
 // Bus configuration
 byte modbusAddress = 0x01;
